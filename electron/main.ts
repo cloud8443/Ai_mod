@@ -26,7 +26,10 @@ function createWindow() {
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    win.loadFile(path.join(__dirname, '../dist/index.html'));
+    // Packaged path: resources/app.asar/dist-electron/electron/main.js
+    // Renderer lives at: resources/app.asar/dist/index.html
+    const rendererPath = path.join(__dirname, '../../dist/index.html');
+    win.loadFile(rendererPath);
   }
 }
 
