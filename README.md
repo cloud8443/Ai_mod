@@ -102,10 +102,32 @@ Artifacts are placed in `dist/`.
 4. Analyze compatibility
 5. Generate AI migration plan
 
+### Terminal log panel (new)
+- The **Terminal** panel shows step-by-step app activity with timestamp + level (`INFO`, `SUCCESS`, `WARN`, `ERROR`, `DEBUG`)
+- Major actions are logged, including:
+  - metadata parse
+  - compatibility analyze
+  - AI plan generation
+  - OpenAI OAuth start + poll
+  - deterministic rules preview + apply
+- Use **Clear Logs** to reset the in-memory renderer log stream
+
 ### Credential handling
 - Enter API key/token in credential field
 - Use **Save Credential** to persist locally
 - Use **Load Stored Credential** / **Clear Stored Credential** as needed
+
+### Settings panel (new)
+Open via the **Settings** button in the top-right.
+
+Available toggles:
+- **Show terminal panel**
+- **Auto-scroll terminal**
+- **Clear logs on app start**
+- **Verbose logging** (enables debug-level log lines)
+
+Quick controls:
+- **Hide Terminal / Show Terminal** button beside Settings for one-click visibility toggle
 
 ### OpenAI device OAuth (practical flow)
 1. Enter your OpenAI OAuth `client_id`

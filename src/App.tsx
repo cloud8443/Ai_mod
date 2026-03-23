@@ -1,5 +1,28 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AIProvider, CompatibilityReport, ParsedModMetadata, RuleTransformPlan } from './lib/types/contracts';
+
+type LogLevel = 'info' | 'success' | 'warn' | 'error' | 'debug';
+
+type LogEntry = {
+  id: number;
+  timestamp: number;
+  level: LogLevel;
+  message: string;
+};
+
+type UiSettings = {
+  showTerminal: boolean;
+  autoScrollTerminal: boolean;
+  clearLogsOnStart: boolean;
+  verboseLogging: boolean;
+};
+
+const DEFAULT_SETTINGS: UiSettings = {
+  showTerminal: true,
+  autoScrollTerminal: true,
+  clearLogsOnStart: false,
+  verboseLogging: false
+};
 
 const SAMPLE_FORGE = `[mods]
 modLoader="javafml"
@@ -37,6 +60,10 @@ public class ExampleMod {
   public static final ResourceLocation ID = new ResourceLocation("example", "thing");
 }`;
 
+function formatLogTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString();
+}
+
 export function App() {
   const [forgeToml, setForgeToml] = useState(SAMPLE_FORGE);
   const [fabricJson, setFabricJson] = useState(SAMPLE_FABRIC);
@@ -55,6 +82,42 @@ export function App() {
   const [planText, setPlanText] = useState('');
   const [codeInput, setCodeInput] = useState(SAMPLE_CODE);
   const [transformPlan, setTransformPlan] = useState<RuleTransformPlan | null>(null);
+  const [settings, setSettings] = useState<UiSettings>(DEFAULT_SETTINGS);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const logIdRef = useRef(1);
+  const terminalRef = useRef<HTMLDivElement | null>(null);
+
+  const pushLog = (level: LogLevel, message: string) => {
+    if (level === 'debug' && !settings.verboseLogging) {
+      return;
+    }
+    setLogs((current) => [
+      ...current,
+      {
+        id: logIdRef.current++,
+        timestamp: Date.now(),
+        level,
+        message
+      }
+    ]);
+  };
+
+  useEffect(() => {
+    if (settings.clearLogsOnStart) {
+      setLogs([]);
+      return;
+    }
+    pushLog('info', 'App ready. Start by parsing metadata or configuring credentials.');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!settings.showTerminal || !settings.autoScrollTerminal) return;
+    const element = terminalRef.current;
+    if (!element) return;
+    element.scrollTop = element.scrollHeight;
+  }, [logs, settings.showTerminal, settings.autoScrollTerminal]);
 
   const request = useMemo(
     () => ({ source: metadata, target: { minecraftVersion: targetVersion, loader: targetLoader }, userGoals: goals }),
@@ -62,98 +125,227 @@ export function App() {
   );
 
   async function onParse() {
-    const parsed = await window.mcModConverter.parseMetadata([
-      { name: 'mods.toml', content: forgeToml },
-      { name: 'fabric.mod.json', content: fabricJson }
-    ]);
-    setMetadata(parsed);
+    try {
+      pushLog('info', 'Parse started: reading mods.toml and fabric.mod.json.');
+      const parsed = await window.mcModConverter.parseMetadata([
+        { name: 'mods.toml', content: forgeToml },
+        { name: 'fabric.mod.json', content: fabricJson }
+      ]);
+      setMetadata(parsed);
+      pushLog('success', `Parse complete: discovered ${parsed.length} metadata record(s).`);
+    } catch (error) {
+      pushLog('error', `Parse failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async function onAnalyze() {
-    const report = await window.mcModConverter.analyzeCompatibility(request);
-    setCompatibilityReport(report);
-    setReportText(JSON.stringify(report, null, 2));
+    try {
+      pushLog('info', `Compatibility analysis started for ${targetLoader} ${targetVersion}.`);
+      pushLog('debug', `Request metadata count: ${request.source.length}.`);
+      const report = await window.mcModConverter.analyzeCompatibility(request);
+      setCompatibilityReport(report);
+      setReportText(JSON.stringify(report, null, 2));
+      pushLog('success', `Analysis complete: score ${report.score}/100, confidence ${(report.confidence * 100).toFixed(1)}%.`);
+    } catch (error) {
+      pushLog('error', `Analyze failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async function onGeneratePlan() {
-    const prompt = await window.mcModConverter.buildPrompt(request);
-    const plan = await window.mcModConverter.generatePlan({
-      provider,
-      credentials: {
-        apiKey: token,
-        oauthAccessToken: provider === 'openai' ? token : undefined
-      },
-      prompt
-    });
-    setPlanText(plan);
+    try {
+      pushLog('info', `AI plan started with provider ${provider}.`);
+      const prompt = await window.mcModConverter.buildPrompt(request);
+      pushLog('debug', `Prompt generated (${prompt.length} chars).`);
+      const plan = await window.mcModConverter.generatePlan({
+        provider,
+        credentials: {
+          apiKey: token,
+          oauthAccessToken: provider === 'openai' ? token : undefined
+        },
+        prompt
+      });
+      setPlanText(plan);
+      pushLog('success', 'AI plan received and rendered.');
+    } catch (error) {
+      pushLog('error', `AI plan failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async function onTransformStub() {
-    const result = await window.mcModConverter.transformStub(request);
-    setReportText(JSON.stringify(result, null, 2));
+    try {
+      pushLog('info', 'Safe transform stub started.');
+      const result = await window.mcModConverter.transformStub(request);
+      setReportText(JSON.stringify(result, null, 2));
+      pushLog('success', 'Safe transform stub completed.');
+    } catch (error) {
+      pushLog('error', `Transform stub failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async function onPreviewRules() {
-    const plan = await window.mcModConverter.runRulesTransform({
-      files: [{ path: 'ExampleMod.java', content: codeInput }],
-      sourceLoader,
-      targetLoader,
-      targetMinecraftVersion: targetVersion,
-      mode: 'preview',
-      backup: { enabled: true, strategy: 'in-memory-manifest' }
-    });
-    setTransformPlan(plan);
+    try {
+      pushLog('info', 'Rules preview started (no file changes).');
+      const plan = await window.mcModConverter.runRulesTransform({
+        files: [{ path: 'ExampleMod.java', content: codeInput }],
+        sourceLoader,
+        targetLoader,
+        targetMinecraftVersion: targetVersion,
+        mode: 'preview',
+        backup: { enabled: true, strategy: 'in-memory-manifest' }
+      });
+      setTransformPlan(plan);
+      pushLog('success', `Rules preview complete: ${plan.results.length} file(s) inspected.`);
+    } catch (error) {
+      pushLog('error', `Rules preview failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async function onApplyRules() {
-    const plan = await window.mcModConverter.runRulesTransform({
-      files: [{ path: 'ExampleMod.java', content: codeInput }],
-      sourceLoader,
-      targetLoader,
-      targetMinecraftVersion: targetVersion,
-      mode: 'apply',
-      backup: { enabled: true, strategy: 'in-memory-manifest' }
-    });
-    const next = plan.results[0]?.outputContent;
-    if (next) setCodeInput(next);
-    setTransformPlan(plan);
+    try {
+      pushLog('info', 'Rules apply started (updating code editor output).');
+      const plan = await window.mcModConverter.runRulesTransform({
+        files: [{ path: 'ExampleMod.java', content: codeInput }],
+        sourceLoader,
+        targetLoader,
+        targetMinecraftVersion: targetVersion,
+        mode: 'apply',
+        backup: { enabled: true, strategy: 'in-memory-manifest' }
+      });
+      const next = plan.results[0]?.outputContent;
+      if (next) {
+        setCodeInput(next);
+        pushLog('debug', 'Editor content replaced with transformed output for ExampleMod.java.');
+      }
+      setTransformPlan(plan);
+      pushLog('success', `Rules apply complete: ${plan.results.length} file(s) processed.`);
+    } catch (error) {
+      pushLog('error', `Rules apply failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async function onSaveSecret() {
-    if (!token) return;
-    await window.mcModConverter.setSecret(provider, token);
-    setOauthLog(`Stored ${provider} credential in local encrypted store.`);
+    if (!token) {
+      pushLog('warn', 'Save credential skipped: token is empty.');
+      return;
+    }
+    try {
+      pushLog('info', `Saving ${provider} credential to local encrypted store.`);
+      await window.mcModConverter.setSecret(provider, token);
+      setOauthLog(`Stored ${provider} credential in local encrypted store.`);
+      pushLog('success', `${provider} credential saved.`);
+    } catch (error) {
+      pushLog('error', `Save credential failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async function onLoadSecret() {
-    const stored = await window.mcModConverter.getSecret(provider);
-    setToken(stored?.value ?? '');
-    setOauthLog(stored ? `Loaded ${provider} credential (updated ${new Date(stored.updatedAt).toISOString()}).` : 'No stored credential.');
+    try {
+      pushLog('info', `Loading stored ${provider} credential.`);
+      const stored = await window.mcModConverter.getSecret(provider);
+      setToken(stored?.value ?? '');
+      setOauthLog(stored ? `Loaded ${provider} credential (updated ${new Date(stored.updatedAt).toISOString()}).` : 'No stored credential.');
+      pushLog(stored ? 'success' : 'warn', stored ? `${provider} credential loaded.` : `No stored ${provider} credential found.`);
+    } catch (error) {
+      pushLog('error', `Load credential failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async function onClearSecret() {
-    await window.mcModConverter.clearSecret(provider);
-    setToken('');
-    setOauthLog(`Cleared ${provider} credential.`);
+    try {
+      pushLog('info', `Clearing ${provider} credential.`);
+      await window.mcModConverter.clearSecret(provider);
+      setToken('');
+      setOauthLog(`Cleared ${provider} credential.`);
+      pushLog('success', `${provider} credential cleared.`);
+    } catch (error) {
+      pushLog('error', `Clear credential failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async function onStartDeviceFlow() {
-    const flow = await window.mcModConverter.startOpenAIDeviceFlow({ clientId: openAIClientId, openBrowser: true });
-    setDeviceCode(flow.deviceCode);
-    setOauthLog(`OpenAI device flow started. User code: ${flow.userCode}. Expires in ${flow.expiresInSeconds}s.`);
+    try {
+      pushLog('info', 'OpenAI OAuth device flow start requested.');
+      const flow = await window.mcModConverter.startOpenAIDeviceFlow({ clientId: openAIClientId, openBrowser: true });
+      setDeviceCode(flow.deviceCode);
+      setOauthLog(`OpenAI device flow started. User code: ${flow.userCode}. Expires in ${flow.expiresInSeconds}s.`);
+      pushLog('success', `OAuth started. User code ${flow.userCode}, expires in ${flow.expiresInSeconds}s.`);
+    } catch (error) {
+      pushLog('error', `OAuth start failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async function onPollDeviceFlow() {
-    const tokenResult = await window.mcModConverter.pollOpenAIDeviceFlow({ clientId: openAIClientId, deviceCode });
-    setToken(tokenResult.access_token);
-    await window.mcModConverter.setSecret('openai', tokenResult.access_token);
-    setOauthLog('OpenAI OAuth token received and stored.');
+    try {
+      pushLog('info', 'Polling OpenAI OAuth device flow for token.');
+      const tokenResult = await window.mcModConverter.pollOpenAIDeviceFlow({ clientId: openAIClientId, deviceCode });
+      setToken(tokenResult.access_token);
+      await window.mcModConverter.setSecret('openai', tokenResult.access_token);
+      setOauthLog('OpenAI OAuth token received and stored.');
+      pushLog('success', 'OAuth token received and saved to secret store.');
+    } catch (error) {
+      pushLog('error', `OAuth poll failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  function onClearLogs() {
+    setLogs([]);
+  }
+
+  function updateSetting<K extends keyof UiSettings>(key: K, value: UiSettings[K]) {
+    setSettings((current) => ({ ...current, [key]: value }));
   }
 
   return (
     <div className="container">
-      <h1>MC Mod Converter AI</h1>
-      <p className="subtle">Metadata parsing, compatibility analysis, AI planning, deterministic transform previews, and local credential vault.</p>
+      <div className="title-row">
+        <div>
+          <h1>MC Mod Converter AI</h1>
+          <p className="subtle">Metadata parsing, compatibility analysis, AI planning, deterministic transform previews, and local credential vault.</p>
+        </div>
+        <div className="actions compact">
+          <button onClick={() => setSettingsOpen(true)}>Settings</button>
+          <button onClick={() => updateSetting('showTerminal', !settings.showTerminal)}>
+            {settings.showTerminal ? 'Hide Terminal' : 'Show Terminal'}
+          </button>
+        </div>
+      </div>
+
+      {settingsOpen ? (
+        <section className="panel settings-panel">
+          <div className="settings-header">
+            <h2>Settings</h2>
+            <button onClick={() => setSettingsOpen(false)}>Close</button>
+          </div>
+          <div className="settings-grid">
+            <label><input type="checkbox" checked={settings.showTerminal} onChange={(e) => updateSetting('showTerminal', e.target.checked)} /> Show terminal panel</label>
+            <label><input type="checkbox" checked={settings.autoScrollTerminal} onChange={(e) => updateSetting('autoScrollTerminal', e.target.checked)} /> Auto-scroll terminal</label>
+            <label><input type="checkbox" checked={settings.clearLogsOnStart} onChange={(e) => updateSetting('clearLogsOnStart', e.target.checked)} /> Clear logs on app start</label>
+            <label><input type="checkbox" checked={settings.verboseLogging} onChange={(e) => updateSetting('verboseLogging', e.target.checked)} /> Verbose logging (show debug logs)</label>
+          </div>
+          <p className="subtle">These settings apply immediately for this session.</p>
+        </section>
+      ) : null}
+
+      {settings.showTerminal ? (
+        <section className="panel terminal-panel">
+          <div className="terminal-header">
+            <h2>Terminal</h2>
+            <div className="actions compact">
+              <button onClick={onClearLogs}>Clear Logs</button>
+            </div>
+          </div>
+          <div className="terminal-log" ref={terminalRef}>
+            {logs.length === 0 ? <p className="subtle">No logs yet.</p> : null}
+            {logs.map((entry) => (
+              <div key={entry.id} className={`log-line ${entry.level}`}>
+                <span className="log-time">[{formatLogTime(entry.timestamp)}]</span>
+                <span className="log-level">{entry.level.toUpperCase()}</span>
+                <span>{entry.message}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="grid two">
         <section>

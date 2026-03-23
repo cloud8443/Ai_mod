@@ -54,6 +54,11 @@ select {
   box-sizing: border-box;
 }
 
+input[type='checkbox'] {
+  width: auto;
+  margin-right: 8px;
+}
+
 textarea {
   min-height: 180px;
   resize: vertical;
@@ -64,6 +69,10 @@ textarea {
   flex-wrap: wrap;
   gap: 8px;
   margin: 16px 0;
+}
+
+.actions.compact {
+  margin: 0;
 }
 
 button {
@@ -88,9 +97,82 @@ pre {
   overflow: auto;
 }
 
+.title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.panel {
+  border: 1px solid #2c3545;
+  border-radius: 10px;
+  background: #111722;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.settings-header,
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-grid label {
+  display: flex;
+  align-items: center;
+}
+
+.terminal-log {
+  background: #0d131d;
+  border: 1px solid #2a3342;
+  border-radius: 8px;
+  padding: 10px;
+  min-height: 120px;
+  max-height: 280px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.log-line {
+  display: flex;
+  gap: 8px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  margin-bottom: 4px;
+}
+
+.log-time {
+  color: #8ea0ba;
+}
+
+.log-level {
+  min-width: 56px;
+  font-weight: 700;
+}
+
+.log-line.info .log-level { color: #6ab0ff; }
+.log-line.success .log-level { color: #6add8f; }
+.log-line.warn .log-level { color: #f5c36a; }
+.log-line.error .log-level { color: #ff7f7f; }
+.log-line.debug .log-level { color: #b89dfb; }
+
 @media (max-width: 980px) {
   .grid.two,
   .grid.controls {
     grid-template-columns: 1fr;
+  }
+
+  .title-row {
+    flex-direction: column;
   }
 }
