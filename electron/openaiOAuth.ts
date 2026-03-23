@@ -27,48 +27,63 @@ function createPkcePair() {
   return { codeVerifier, codeChallenge: challenge };
 }
 
+function assertClientId(raw: string | undefined): string {
+  const clientId = raw?.trim() ?? '';
+  if (!clientId) {
+    throw new Error('Missing OpenAI OAuth client_id. Enter a valid client_id or use manual token input.');
+  }
+  return clientId;
+}
+
 export async function startOpenAILinkFlow(params: {
   clientId: string;
   redirectUri?: string;
   scope?: string;
 }): Promise<OAuthLinkStartResult> {
+  const clientId = assertClientId(params.clientId);
   const redirectUri = params.redirectUri?.trim() || DEFAULT_REDIRECT_URI;
   const scope = params.scope?.trim() || 'openid profile offline_access';
   const state = crypto.randomUUID();
   const { codeVerifier, codeChallenge } = createPkcePair();
 
-  pendingByClient.set(params.clientId, {
+  pendingByClient.set(clientId, {
     state,
     codeVerifier,
     redirectUri,
     createdAt: Date.now()
   });
 
-  const authorizationUrl = `${OPENAI_OAUTH_BASE}/authorize?${new URLSearchParams({
-    response_type: 'code',
-    client_id: params.clientId,
-    redirect_uri: redirectUri,
-    scope,
-    code_challenge: codeChallenge,
-    code_challenge_method: 'S256',
-    state
-  }).toString()}`;
+  try {
+    const authorizationUrl = `${OPENAI_OAUTH_BASE}/authorize?${new URLSearchParams({
+      response_type: 'code',
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      scope,
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      state
+    }).toString()}`;
 
-  return {
-    authorizationUrl,
-    state,
-    redirectUri,
-    codeChallengeMethod: 'S256'
-  };
+    return {
+      authorizationUrl,
+      state,
+      redirectUri,
+      codeChallengeMethod: 'S256'
+    };
+  } catch (error) {
+    pendingByClient.delete(clientId);
+    throw error;
+  }
 }
 
 export async function completeOpenAILinkFlow(params: {
   clientId: string;
   codeOrCallbackUrl: string;
 }): Promise<OAuthTokenResult> {
-  const pending = pendingByClient.get(params.clientId);
+  const clientId = assertClientId(params.clientId);
+  const pending = pendingByClient.get(clientId);
   if (!pending) {
-    throw new Error('No pending OAuth session found. Start link flow first.');
+    throw new Error('No pending OAuth session found. Start link flow first or paste a manual token.');
   }
 
   const trimmed = params.codeOrCallbackUrl.trim();
@@ -81,35 +96,40 @@ export async function completeOpenAILinkFlow(params: {
     code = url.searchParams.get('code') ?? '';
 
     if (!code) {
-      throw new Error('Callback URL does not contain a code parameter.');
+      throw new Error('Callback URL does not contain code. Paste callback URL/code or use manual token input.');
     }
 
     if (callbackState && callbackState !== pending.state) {
-      throw new Error('OAuth state mismatch. Restart login and try again.');
+      throw new Error('OAuth state mismatch. Restart link login or use manual token input.');
     }
   }
 
   if (!code) {
-    throw new Error('Missing authorization code. Paste callback URL or code.');
+    throw new Error('Missing authorization code. Paste callback URL/code or use manual token input.');
   }
 
-  const res = await fetch(`${OPENAI_OAUTH_BASE}/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: params.clientId,
-      code,
-      redirect_uri: pending.redirectUri,
-      code_verifier: pending.codeVerifier
-    })
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${OPENAI_OAUTH_BASE}/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: clientId,
+        code,
+        redirect_uri: pending.redirectUri,
+        code_verifier: pending.codeVerifier
+      })
+    });
+  } catch (error) {
+    throw new Error(`OpenAI token endpoint request failed. Check network and retry, or use manual token input. (${error instanceof Error ? error.message : String(error)})`);
+  }
 
   if (!res.ok) {
     const msg = await res.text();
-    throw new Error(`OpenAI token exchange failed (${res.status}): ${msg}`);
+    throw new Error(`OpenAI token exchange failed (${res.status}). ${msg || 'Please retry or use manual token input.'}`);
   }
 
-  pendingByClient.delete(params.clientId);
+  pendingByClient.delete(clientId);
   return (await res.json()) as OAuthTokenResult;
 }
