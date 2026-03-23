@@ -34,27 +34,27 @@ export const MIGRATION_KNOWLEDGE: KnowledgeEntry[] = [
     ]
   },
   {
-    id: 'forge-to-fabric-1-16-1-20-common',
-    title: 'Forge -> Fabric migration patterns (1.16-1.20)',
+    id: 'forge-1-16-to-1-21-modernization',
+    title: 'Forge same-loader migration patterns (1.16-1.21)',
     sourceLoader: 'forge',
-    targetLoader: 'fabric',
-    sourceMinecraftRange: '>=1.16.0 <1.21.0',
-    targetMinecraftRange: '>=1.16.0 <1.21.0',
+    targetLoader: 'forge',
+    sourceMinecraftRange: '>=1.16.0 <1.22.0',
+    targetMinecraftRange: '>=1.16.0 <1.22.0',
     hints: [
-      'Replace DeferredRegister/RegistryObject with Fabric registry setup.',
-      'Port event hooks to Fabric API callbacks and mixins where needed.'
+      'Review Forge event/lifecycle API updates and renamed registries across versions.',
+      'DeferredRegister usage is still expected, but method signatures can drift between minor lines.'
     ]
   },
   {
-    id: 'fabric-to-forge-1-19-1-21',
-    title: 'Fabric -> Forge migration patterns (1.19-1.21)',
+    id: 'fabric-1-19-to-1-21-modernization',
+    title: 'Fabric same-loader migration patterns (1.19-1.21)',
     sourceLoader: 'fabric',
-    targetLoader: 'forge',
-    sourceMinecraftRange: '>=1.19.0 <=1.21.x',
-    targetMinecraftRange: '>=1.19.0 <=1.21.x',
+    targetLoader: 'fabric',
+    sourceMinecraftRange: '>=1.19.0 <1.22.0',
+    targetMinecraftRange: '>=1.19.0 <1.22.0',
     hints: [
-      'Replace Fabric callback/event API usage with Forge event bus subscriptions.',
-      'Use DeferredRegister for content registration.'
+      'Check Fabric API module versions and moved callback/event APIs.',
+      'Confirm loader and mapping compatibility for the exact target Minecraft version.'
     ]
   },
   {
@@ -71,35 +71,7 @@ export const MIGRATION_KNOWLEDGE: KnowledgeEntry[] = [
   }
 ];
 
-export const LOADER_API_RENAMES: LoaderApiRename[] = [
-  {
-    id: 'creative-mode-tab-to-item-group-events',
-    fromLoader: 'forge',
-    toLoader: 'fabric',
-    minecraftRange: '>=1.19.0',
-    fromSymbol: 'CreativeModeTab',
-    toSymbol: 'ItemGroupEvents',
-    note: 'Fabric uses ItemGroupEvents callbacks in place of direct CreativeModeTab usage patterns.'
-  },
-  {
-    id: 'registry-object-to-fabric-register',
-    fromLoader: 'forge',
-    toLoader: 'fabric',
-    minecraftRange: '>=1.16.0',
-    fromSymbol: 'RegistryObject<T>',
-    toSymbol: 'Registry.register(...)',
-    note: 'Forge deferred object handles map to direct registration calls in Fabric ecosystems.'
-  },
-  {
-    id: 'fabric-registry-register-to-deferred-register',
-    fromLoader: 'fabric',
-    toLoader: 'forge',
-    minecraftRange: '>=1.16.0',
-    fromSymbol: 'Registry.register(...)',
-    toSymbol: 'DeferredRegister',
-    note: 'Forge registration is typically orchestrated via DeferredRegister and mod event bus.'
-  }
-];
+export const LOADER_API_RENAMES: LoaderApiRename[] = [];
 
 export function matchesVersion(version: string | undefined, range: string | undefined): boolean {
   if (!range) return true;

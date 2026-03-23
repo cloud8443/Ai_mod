@@ -10,8 +10,12 @@ export function buildConversionPrompt(request: ConversionRequest): string {
     )
     .join('\n');
 
+  const sourceLoaders = [...new Set(request.source.map((m) => m.loader))].join(', ') || 'unknown';
+
   return [
-    'You are an assistant helping plan Minecraft mod migration, not executing edits automatically.',
+    'You are an assistant helping plan Minecraft mod version upgrades, not executing edits automatically.',
+    'Important scope: only same-loader upgrades are allowed (Forge->Forge, Fabric->Fabric).',
+    `Source loader(s): ${sourceLoaders}`,
     `Target loader: ${request.target.loader}`,
     `Target Minecraft version: ${request.target.minecraftVersion}`,
     'Source metadata:',

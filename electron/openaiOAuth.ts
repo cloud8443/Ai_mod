@@ -1,66 +1,115 @@
-import type { OAuthDeviceStartResult } from '../src/lib/types/contracts.js';
+import crypto from 'node:crypto';
+import type { OAuthLinkStartResult, OAuthTokenResult } from '../src/lib/types/contracts.js';
 
 const OPENAI_OAUTH_BASE = 'https://auth.openai.com/oauth';
+const DEFAULT_REDIRECT_URI = 'https://localhost/callback';
 
-interface DeviceCodeRaw {
-  device_code: string;
-  user_code: string;
-  verification_uri: string;
-  verification_uri_complete?: string;
-  expires_in: number;
-  interval?: number;
+type PendingPkce = {
+  state: string;
+  codeVerifier: string;
+  redirectUri: string;
+  createdAt: number;
+};
+
+const pendingByClient = new Map<string, PendingPkce>();
+
+function base64url(input: Buffer): string {
+  return input
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
 }
 
-interface TokenRaw {
-  access_token: string;
-  refresh_token?: string;
-  expires_in?: number;
-  token_type?: string;
+function createPkcePair() {
+  const codeVerifier = base64url(crypto.randomBytes(32));
+  const challenge = base64url(crypto.createHash('sha256').update(codeVerifier).digest());
+  return { codeVerifier, codeChallenge: challenge };
 }
 
-export async function startOpenAIDeviceFlow(clientId: string, scope = 'openid profile offline_access'): Promise<OAuthDeviceStartResult> {
-  const res = await fetch(`${OPENAI_OAUTH_BASE}/device/code`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: clientId,
-      scope
-    })
+export async function startOpenAILinkFlow(params: {
+  clientId: string;
+  redirectUri?: string;
+  scope?: string;
+}): Promise<OAuthLinkStartResult> {
+  const redirectUri = params.redirectUri?.trim() || DEFAULT_REDIRECT_URI;
+  const scope = params.scope?.trim() || 'openid profile offline_access';
+  const state = crypto.randomUUID();
+  const { codeVerifier, codeChallenge } = createPkcePair();
+
+  pendingByClient.set(params.clientId, {
+    state,
+    codeVerifier,
+    redirectUri,
+    createdAt: Date.now()
   });
 
-  if (!res.ok) {
-    throw new Error(`Failed to start OpenAI device flow (${res.status})`);
-  }
+  const authorizationUrl = `${OPENAI_OAUTH_BASE}/authorize?${new URLSearchParams({
+    response_type: 'code',
+    client_id: params.clientId,
+    redirect_uri: redirectUri,
+    scope,
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256',
+    state
+  }).toString()}`;
 
-  const json = (await res.json()) as DeviceCodeRaw;
   return {
-    verificationUri: json.verification_uri,
-    verificationUriComplete: json.verification_uri_complete,
-    userCode: json.user_code,
-    deviceCode: json.device_code,
-    intervalSeconds: json.interval ?? 5,
-    expiresInSeconds: json.expires_in
+    authorizationUrl,
+    state,
+    redirectUri,
+    codeChallengeMethod: 'S256'
   };
 }
 
-export async function pollOpenAIDeviceToken(params: {
+export async function completeOpenAILinkFlow(params: {
   clientId: string;
-  deviceCode: string;
-}): Promise<TokenRaw> {
+  codeOrCallbackUrl: string;
+}): Promise<OAuthTokenResult> {
+  const pending = pendingByClient.get(params.clientId);
+  if (!pending) {
+    throw new Error('No pending OAuth session found. Start link flow first.');
+  }
+
+  const trimmed = params.codeOrCallbackUrl.trim();
+  const looksLikeUrl = /^https?:\/\//i.test(trimmed);
+  let code = trimmed;
+
+  if (looksLikeUrl) {
+    const url = new URL(trimmed);
+    const callbackState = url.searchParams.get('state');
+    code = url.searchParams.get('code') ?? '';
+
+    if (!code) {
+      throw new Error('Callback URL does not contain a code parameter.');
+    }
+
+    if (callbackState && callbackState !== pending.state) {
+      throw new Error('OAuth state mismatch. Restart login and try again.');
+    }
+  }
+
+  if (!code) {
+    throw new Error('Missing authorization code. Paste callback URL or code.');
+  }
+
   const res = await fetch(`${OPENAI_OAUTH_BASE}/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      grant_type: 'authorization_code',
       client_id: params.clientId,
-      device_code: params.deviceCode
+      code,
+      redirect_uri: pending.redirectUri,
+      code_verifier: pending.codeVerifier
     })
   });
 
   if (!res.ok) {
     const msg = await res.text();
-    throw new Error(`OpenAI token poll failed (${res.status}): ${msg}`);
+    throw new Error(`OpenAI token exchange failed (${res.status}): ${msg}`);
   }
 
-  return (await res.json()) as TokenRaw;
+  pendingByClient.delete(params.clientId);
+  return (await res.json()) as OAuthTokenResult;
 }

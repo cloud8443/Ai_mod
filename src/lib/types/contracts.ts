@@ -118,13 +118,18 @@ export interface RuleTransformPlan {
   results: FileTransformResult[];
 }
 
-export interface OAuthDeviceStartResult {
-  verificationUri: string;
-  verificationUriComplete?: string;
-  userCode: string;
-  deviceCode: string;
-  intervalSeconds: number;
-  expiresInSeconds: number;
+export interface OAuthLinkStartResult {
+  authorizationUrl: string;
+  state: string;
+  redirectUri: string;
+  codeChallengeMethod: 'S256';
+}
+
+export interface OAuthTokenResult {
+  access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
+  token_type?: string;
 }
 
 export interface StoredSecret {

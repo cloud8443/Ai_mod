@@ -13,9 +13,18 @@ export async function safeTransformStub(request: ConversionRequest): Promise<Saf
     };
   }
 
+  const crossLoader = request.source.some((mod) => mod.loader !== request.target.loader);
+  if (crossLoader) {
+    return {
+      status: 'blocked',
+      actions: [],
+      warnings: ['Cross-loader migration is disabled. Choose the same loader for source and target.']
+    };
+  }
+
   const actions = request.source.map(
     (mod) =>
-      `Plan only: review ${mod.modId} for ${mod.loader} -> ${request.target.loader} migration to MC ${request.target.minecraftVersion}.`
+      `Plan only: review ${mod.modId} for ${mod.loader} version upgrade to MC ${request.target.minecraftVersion}.`
   );
 
   return {

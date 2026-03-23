@@ -1,60 +1,50 @@
 # mc-mod-converter-ai
 
-Desktop assistant scaffold for **planning and previewing** Minecraft mod migrations (Electron + React + TypeScript).
+Desktop assistant scaffold for **planning and previewing** Minecraft mod upgrades (Electron + React + TypeScript).
 
-This project is intentionally conservative:
-- deterministic code rules are preview-first,
-- backups/rollback are explicitly planned,
-- AI output remains advisory,
-- no claim of full automatic mod conversion.
+## Scope (important)
+
+This build only supports **same-loader version migration**:
+- Forge -> Forge ✅
+- Fabric -> Fabric ✅
+- Forge -> Fabric ❌
+- Fabric -> Forge ❌
+
+Cross-loader conversion is intentionally blocked in analyzer/rules/UI/prompts.
 
 ---
 
-## Features
+## Key features
 
-### 1) Metadata + compatibility workflow
+1) **Beginner-friendly wizard UI**
+- Step-by-step flow (setup -> parse/check -> AI login/plan -> rules preview)
+- Simpler labels, safer defaults
+- Optional terminal panel (off by default)
+
+2) **Metadata + compatibility workflow**
 - Parses Forge `mods.toml`, Fabric `fabric.mod.json`, and legacy `mcmod.info`
-- Uses semantic version-range parsing (Maven + semver-style ranges) for MC and dependency checks
-- Detects dependency missing/conflict scenarios across parsed mods
-- Produces confidence scoring with explainable factors and matched migration knowledge IDs
+- Semantic version-range checks for MC and dependencies
+- Explainable score + confidence factors + matched migration knowledge IDs
 
-### 2) AI planning (still multi-provider)
-- OpenAI (`/v1/responses`)
-- Anthropic (`/v1/messages`)
-- Gemini (`generateContent`)
+3) **AI planning**
+- OpenAI / Anthropic / Gemini clients remain available
+- Prompt now enforces same-loader upgrade scope
 
-### 3) Deterministic + AST-aware transformation pipeline (phase 2)
-- Fixed, deterministic rule ordering
-- Rule selection is version-aware + loader-aware with per-rule confidence
-- **AST-aware Java scaffold** (parser-validated) runs first for conservative mappings:
-  - import renames
-  - class identifier renames
-  - selected method/constructor migration patterns
-- Preview mode (default recommended)
-- Apply mode for transformed output payloads
-- Returns selected/skipped rule reasons and matched migration knowledge IDs
-- Backup/rollback support **design contract** included in output manifest:
-  - manifest ID
-  - backup strategy
-  - rollback instructions
+4) **Deterministic + AST-aware transform pipeline**
+- Deterministic rule ordering
+- Version-aware rule selection
+- Preview-first workflow, apply optional
+- Rollback guidance in backup manifest contract
 
-Mapping datasets are expandable JSON sources in:
-- `src/lib/transform/mappings/imports.json`
-- `src/lib/transform/mappings/classes.json`
-- `src/lib/transform/mappings/methods.json`
+5) **OpenAI OAuth (link-based approval UX)**
+- Generate authorization URL in app
+- User opens link and approves in browser
+- Paste callback URL or auth code to complete login quickly
+- Token persisted locally via secure storage abstraction
 
-Generated runtime mapping module:
-- `src/lib/transform/generatedMappings.ts`
-
-### 4) OpenAI OAuth + secure local persistence (new)
-- Device-flow helpers for OpenAI OAuth endpoints (client_id required)
-- Browser-assisted verification launch
-- Local secret persistence abstraction via Electron `safeStorage` when available
-- Fallback to plain JSON if OS encryption is unavailable
-
-### 5) CI for Windows artifacts (new)
-- GitHub Actions workflow: `.github/workflows/windows-build.yml`
-- Runs typecheck/build and emits NSIS artifacts
+6) **i18n (English + Korean)**
+- Language switch in Settings
+- Core wizard/OAuth/logging UI translated
 
 ---
 
@@ -73,130 +63,32 @@ npm run build
 npm test
 ```
 
-## Mapping dataset + regression commands
+## Regression/dataset helpers
 
 ```bash
-# regenerate src/lib/transform/generatedMappings.ts from JSON datasets
 npm run dataset:refresh
-
-# build electron lib + run all node regression tests
 npm run test:regression
 ```
 
-## Build Windows installer locally
-
-```bash
-npm run dist:win
-```
-
-Artifacts are placed in `dist/`.
-
 ---
 
-## UI usage guide
+## OAuth quick flow (link-based)
 
-### Metadata and planning
-1. Paste or load metadata text in Forge/Fabric panels
-2. Set source/target loader + target MC version
-3. Parse metadata
-4. Analyze compatibility
-5. Generate AI migration plan
-
-### Terminal log panel (new)
-- The **Terminal** panel shows step-by-step app activity with timestamp + level (`INFO`, `SUCCESS`, `WARN`, `ERROR`, `DEBUG`)
-- Major actions are logged, including:
-  - metadata parse
-  - compatibility analyze
-  - AI plan generation
-  - OpenAI OAuth start + poll
-  - deterministic rules preview + apply
-- Use **Clear Logs** to reset the in-memory renderer log stream
-
-### Credential handling
-- Enter API key/token in credential field
-- Use **Save Credential** to persist locally
-- Use **Load Stored Credential** / **Clear Stored Credential** as needed
-
-### Settings panel (new)
-Open via the **Settings** button in the top-right.
-
-Available toggles:
-- **Show terminal panel**
-- **Auto-scroll terminal**
-- **Clear logs on app start**
-- **Verbose logging** (enables debug-level log lines)
-
-Quick controls:
-- **Hide Terminal / Show Terminal** button beside Settings for one-click visibility toggle
-
-### OpenAI device OAuth (practical flow)
-1. Enter your OpenAI OAuth `client_id`
-2. Click **Start OpenAI Device Flow** (app opens verification URL)
-3. Complete verification in browser
-4. Click **Poll Device Token**
-5. Token is auto-saved in local secret store
-
-### Deterministic rules engine
-1. Paste source code into the rules input panel
-2. Click **Preview Rules** first
-3. Inspect rule order, hashes, before/after snippets, backup manifest
-4. Optionally click **Apply Rules** to update editor content
-
----
-
-## GitHub Actions CI (Windows build artifact)
-
-Workflow file: `.github/workflows/windows-build.yml`
-
-Behavior:
-- Trigger: push/PR/manual (`workflow_dispatch`)
-- Runner: `windows-latest`
-- Steps:
-  - `npm ci`
-  - `npm run typecheck`
-  - `npm run build`
-  - `npm run dist:win`
-  - generate SHA256 checksums for installer artifacts
-  - upload `dist/*.exe`, `dist/*.yml`, `dist/*.sha256`, `dist/win-unpacked/**`
-
-### Download artifact from GitHub Actions
-1. Push branch to GitHub (or manually run workflow from **Actions → Windows Build → Run workflow**).
-2. Open the finished workflow run.
-3. In **Artifacts**, download `mc-mod-converter-ai-windows`.
-4. Unzip and verify checksum (PowerShell example):
-   ```powershell
-   Get-FileHash .\"MC Mod Converter AI Setup *.exe" -Algorithm SHA256
-   Get-Content .\"MC Mod Converter AI Setup *.exe.sha256"
-   ```
-
----
-
-## Important limitations
-
-- Not a one-click guaranteed converter
-- Knowledge base is representative (old/mid/latest ranges) and not exhaustive for every mod ecosystem edge-case
-- Semantic range parsing improves metadata checks, but malformed/non-standard metadata can still reduce accuracy
-- Rules engine is deterministic but regex-based (not semantic Java/Kotlin transforms)
-- Rule confidence is heuristic and should be treated as guidance, not proof of correctness
-- No project-wide filesystem rewrite pipeline yet (engine currently transforms provided file payloads)
-- OAuth device flow depends on endpoint/client availability and may require provider-side configuration
-- Secret storage uses `safeStorage` when available; otherwise plaintext fallback is used in app data
-- No automatic runtime/game launch verification yet
+1. Enter OpenAI OAuth `client_id`
+2. (Optional) adjust redirect URI
+3. Click **Generate approval link**
+4. Open link, approve access in browser
+5. Paste callback URL or code into app
+6. Click **Complete login**
 
 ---
 
 ## Project structure
 
-- `electron/main.ts` – window + IPC wiring
-- `electron/tokenStore.ts` – local secret persistence abstraction
-- `electron/openaiOAuth.ts` – OpenAI device-flow helpers
-- `src/lib/parsers/` – metadata parsing
-- `src/lib/analysis/` – compatibility scoring + confidence factors
-- `src/lib/knowledge/migrationKnowledge.ts` – versioned migration KB + loader API rename mappings
-- `src/lib/ai/` – AI provider clients
-- `src/lib/transform/javaAstTransform.ts` – parser-validated Java transform scaffold
-- `src/lib/transform/mappings/*.json` – editable mapping dataset sources
-- `src/lib/transform/generatedMappings.ts` – generated mapping module used at runtime
-- `src/lib/transform/rulesEngine.ts` – deterministic migration rules engine
-- `tests/fixtures/regression/` – Java regression fixtures for transform output
-- `src/App.tsx` – UI for metadata, OAuth, credential store, rules preview/apply
+- `src/App.tsx` – wizard UI + i18n + optional terminal + OAuth link flow
+- `src/lib/analysis/compatibility.ts` – compatibility scoring and same-loader enforcement
+- `src/lib/prompts/conversionPrompt.ts` – AI planning prompt contract
+- `src/lib/transform/rulesEngine.ts` – deterministic rules (same-loader enforced)
+- `electron/openaiOAuth.ts` – OpenAI link-based OAuth + PKCE exchange helpers
+- `electron/main.ts` / `electron/preload.ts` – IPC bridge
+- `tests/*.test.js` – regression tests

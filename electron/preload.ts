@@ -22,8 +22,10 @@ const api = {
   setSecret: (provider: AIProvider, value: string): Promise<StoredSecret> => ipcRenderer.invoke('auth:secrets:set', provider, value),
   getSecret: (provider: AIProvider): Promise<StoredSecret | null> => ipcRenderer.invoke('auth:secrets:get', provider),
   clearSecret: (provider: AIProvider): Promise<{ ok: boolean }> => ipcRenderer.invoke('auth:secrets:clear', provider),
-  startOpenAIDeviceFlow: (params: { clientId: string; openBrowser: boolean }) => ipcRenderer.invoke('auth:openai:startDevice', params),
-  pollOpenAIDeviceFlow: (params: { clientId: string; deviceCode: string }) => ipcRenderer.invoke('auth:openai:pollDevice', params)
+  startOpenAILinkFlow: (params: { clientId: string; redirectUri?: string; openBrowser: boolean }) =>
+    ipcRenderer.invoke('auth:openai:startLink', params),
+  completeOpenAILinkFlow: (params: { clientId: string; codeOrCallbackUrl: string }) =>
+    ipcRenderer.invoke('auth:openai:completeLink', params)
 };
 
 contextBridge.exposeInMainWorld('mcModConverter', api);

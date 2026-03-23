@@ -23,15 +23,13 @@ declare global {
       setSecret: (provider: AIProvider, value: string) => Promise<StoredSecret>;
       getSecret: (provider: AIProvider) => Promise<StoredSecret | null>;
       clearSecret: (provider: AIProvider) => Promise<{ ok: boolean }>;
-      startOpenAIDeviceFlow: (params: { clientId: string; openBrowser: boolean }) => Promise<{
-        verificationUri: string;
-        verificationUriComplete?: string;
-        userCode: string;
-        deviceCode: string;
-        intervalSeconds: number;
-        expiresInSeconds: number;
+      startOpenAILinkFlow: (params: { clientId: string; redirectUri?: string; openBrowser: boolean }) => Promise<{
+        authorizationUrl: string;
+        state: string;
+        redirectUri: string;
+        codeChallengeMethod: 'S256';
       }>;
-      pollOpenAIDeviceFlow: (params: { clientId: string; deviceCode: string }) => Promise<{
+      completeOpenAILinkFlow: (params: { clientId: string; codeOrCallbackUrl: string }) => Promise<{
         access_token: string;
         refresh_token?: string;
         expires_in?: number;

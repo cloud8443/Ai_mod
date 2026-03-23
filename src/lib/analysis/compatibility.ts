@@ -36,16 +36,17 @@ export function analyzeCompatibility(
   for (const mod of source) {
     if (mod.loader !== target.loader) {
       issues.push({
-        severity: 'warn',
-        code: 'LOADER_MISMATCH',
+        severity: 'error',
+        code: 'LOADER_MISMATCH_UNSUPPORTED',
         modId: mod.modId,
-        message: `${mod.modId} is ${mod.loader}, target loader is ${target.loader}. Cross-loader conversion is typically manual.`
+        message: `${mod.modId} uses ${mod.loader}, but this app only supports same-loader upgrades (${mod.loader} -> ${mod.loader}).`
       });
       confidenceFactors.push({
-        label: 'cross-loader-conversion',
-        impact: -0.12,
-        detail: `${mod.modId} requires API and lifecycle migration across loaders.`
+        label: 'cross-loader-blocked',
+        impact: -0.45,
+        detail: `${mod.modId} would require a cross-loader migration, which is out of scope in this build.`
       });
+      continue;
     }
 
     if (mod.minecraftVersions.length > 0) {
@@ -153,9 +154,11 @@ export function analyzeCompatibility(
     score,
     confidence,
     summary:
-      warnCount === 0
-        ? 'No obvious metadata-level blockers found. Manual source/API changes may still be required.'
-        : `${warnCount} potential compatibility warnings detected. Expect manual refactoring and testing.`,
+      errorCount > 0
+        ? 'Blocked: cross-loader migration is not supported. Keep source and target loader the same.'
+        : warnCount === 0
+          ? 'No obvious metadata-level blockers found for this same-loader upgrade.'
+          : `${warnCount} potential compatibility warnings detected. Expect manual refactoring and testing.`,
     issues,
     matchedKnowledgeEntryIds: matchedKnowledge.map((entry) => entry.id),
     confidenceFactors

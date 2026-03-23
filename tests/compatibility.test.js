@@ -31,7 +31,7 @@ test('analyzeCompatibility detects semver incompatibility and dependency conflic
   assert.ok(report.confidenceFactors.length > 0);
 });
 
-test('analyzeCompatibility includes matched knowledge entries for forge->fabric migration', () => {
+test('analyzeCompatibility blocks cross-loader requests', () => {
   const source = [
     {
       loader: 'forge',
@@ -44,6 +44,24 @@ test('analyzeCompatibility includes matched knowledge entries for forge->fabric 
   ];
 
   const report = analyzeCompatibility(source, { minecraftVersion: '1.20.6', loader: 'fabric' });
+
+  assert.ok(report.issues.some((i) => i.code === 'LOADER_MISMATCH_UNSUPPORTED'));
+  assert.ok(report.summary.toLowerCase().includes('blocked'));
+});
+
+test('analyzeCompatibility includes matched knowledge entries for forge same-loader migration', () => {
+  const source = [
+    {
+      loader: 'forge',
+      modId: 'portme',
+      version: '1.0.0',
+      minecraftVersions: ['[1.20,1.21)'],
+      dependencies: [],
+      sourceFile: 'mods.toml'
+    }
+  ];
+
+  const report = analyzeCompatibility(source, { minecraftVersion: '1.20.6', loader: 'forge' });
 
   assert.ok(report.matchedKnowledgeEntryIds.length > 0);
 });

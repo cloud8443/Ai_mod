@@ -15,43 +15,7 @@ type Rule = {
 };
 
 const RULES: Rule[] = [
-  {
-    id: 'forge-to-fabric-import-itemgroup',
-    description: 'Forge CreativeModeTab -> Fabric ItemGroup import migration',
-    confidence: 0.82,
-    sourceLoader: 'forge',
-    targetLoader: 'fabric',
-    targetVersionRange: '>=1.19.0',
-    transform: (content) =>
-      content
-        .replace(/import\s+net\.minecraft\.world\.item\.CreativeModeTab;/g, 'import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;')
-        .replace(/CreativeModeTab\./g, 'ItemGroupEvents.')
-  },
-  {
-    id: 'forge-to-fabric-registryobject',
-    description: 'Forge RegistryObject usage to direct registry access placeholder',
-    confidence: 0.73,
-    sourceLoader: 'forge',
-    targetLoader: 'fabric',
-    targetVersionRange: '>=1.16.0',
-    transform: (content) =>
-      content
-        .replace(/import\s+net\.minecraftforge\.registries\.RegistryObject;/g, '')
-        .replace(/RegistryObject<([^>]+)>\s+(\w+)\s*=\s*[^;]+;/g, '$1 $2 /* TODO: replace with Fabric Registry.register */;')
-  },
-  {
-    id: 'fabric-to-forge-registry-register',
-    description: 'Fabric Registry.register hints converted for Forge DeferredRegister',
-    confidence: 0.71,
-    sourceLoader: 'fabric',
-    targetLoader: 'forge',
-    targetVersionRange: '>=1.16.0',
-    transform: (content) =>
-      content.replace(
-        /Registry\.register\(([^;]+)\);/g,
-        '/* TODO forge */ DeferredRegister flow required for: Registry.register($1);'
-      )
-  },
+
   {
     id: 'mc-1-20-5-datapack-registry-rename',
     description: 'Version hint: BuiltinRegistries -> BuiltInRegistries',
@@ -73,6 +37,10 @@ const RULES: Rule[] = [
 ];
 
 export function runDeterministicRuleTransform(req: RuleTransformRequest): RuleTransformPlan {
+  if (req.sourceLoader !== req.targetLoader) {
+    throw new Error('Cross-loader rules transforms are disabled. Use the same source and target loader.');
+  }
+
   const matchedKnowledgeEntries = getMatchedKnowledgeEntries({
     sourceLoader: req.sourceLoader,
     targetLoader: req.targetLoader,

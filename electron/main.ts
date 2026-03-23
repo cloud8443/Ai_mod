@@ -7,7 +7,7 @@ import { createProviderClient } from '../src/lib/ai/providers.js';
 import { safeTransformStub } from '../src/lib/transform/safeTransform.js';
 import { runDeterministicRuleTransform } from '../src/lib/transform/rulesEngine.js';
 import { LocalTokenStore } from './tokenStore.js';
-import { pollOpenAIDeviceToken, startOpenAIDeviceFlow } from './openaiOAuth.js';
+import { completeOpenAILinkFlow, startOpenAILinkFlow } from './openaiOAuth.js';
 import type { AIProvider, AIRequest, ConversionRequest, RuleTransformRequest } from '../src/lib/types/contracts.js';
 
 const tokenStore = new LocalTokenStore();
@@ -76,16 +76,16 @@ ipcMain.handle('auth:secrets:clear', async (_event, provider: AIProvider) => {
   return { ok: true };
 });
 
-ipcMain.handle('auth:openai:startDevice', async (_event, params: { clientId: string; openBrowser: boolean }) => {
-  const start = await startOpenAIDeviceFlow(params.clientId);
+ipcMain.handle('auth:openai:startLink', async (_event, params: { clientId: string; redirectUri?: string; openBrowser: boolean }) => {
+  const start = await startOpenAILinkFlow(params);
   if (params.openBrowser) {
-    await shell.openExternal(start.verificationUriComplete ?? start.verificationUri);
+    await shell.openExternal(start.authorizationUrl);
   }
   return start;
 });
 
-ipcMain.handle('auth:openai:pollDevice', async (_event, params: { clientId: string; deviceCode: string }) => {
-  return pollOpenAIDeviceToken(params);
+ipcMain.handle('auth:openai:completeLink', async (_event, params: { clientId: string; codeOrCallbackUrl: string }) => {
+  return completeOpenAILinkFlow(params);
 });
 
 app.whenReady().then(() => {
