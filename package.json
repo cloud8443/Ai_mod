@@ -18,8 +18,8 @@
     "dataset:refresh": "node scripts/refresh-transform-dataset.mjs",
     "test:regression": "node scripts/run-regression.mjs",
     "test": "npm run test:regression",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist": "npm run build && electron-builder"
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist": "npm run build && electron-builder --publish never"
   },
   "dependencies": {
     "java-parser": "^3.0.1",
