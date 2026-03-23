@@ -39,10 +39,19 @@ export interface CompatibilityIssue {
   modId?: string;
 }
 
+export interface CompatibilityFactor {
+  label: string;
+  impact: number;
+  detail: string;
+}
+
 export interface CompatibilityReport {
   score: number;
+  confidence: number;
   summary: string;
   issues: CompatibilityIssue[];
+  matchedKnowledgeEntryIds: string[];
+  confidenceFactors: CompatibilityFactor[];
 }
 
 export interface SafeTransformResult {
@@ -82,6 +91,13 @@ export interface FileTransformResult {
   outputContent?: string;
 }
 
+export interface RuleSelectionDecision {
+  ruleId: string;
+  selected: boolean;
+  confidence: number;
+  reason: string;
+}
+
 export interface RuleTransformPlan {
   mode: 'preview' | 'apply';
   deterministicRuleOrder: string[];
@@ -96,6 +112,8 @@ export interface RuleTransformPlan {
     filesChanged: number;
     totalRuleApplications: number;
   };
+  matchedKnowledgeEntryIds: string[];
+  ruleDecisions: RuleSelectionDecision[];
   warnings: string[];
   results: FileTransformResult[];
 }

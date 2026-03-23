@@ -1,10 +1,15 @@
 import crypto from 'node:crypto';
-import type { RuleTransformPlan, RuleTransformRequest } from '../types/contracts';
+import { getMatchedKnowledgeEntries, matchesVersion } from '../knowledge/migrationKnowledge';
+import type { RuleSelectionDecision, RuleTransformPlan, RuleTransformRequest } from '../types/contracts';
 
 type Rule = {
   id: string;
   description: string;
-  when: (req: RuleTransformRequest) => boolean;
+  confidence: number;
+  sourceLoader?: 'forge' | 'fabric';
+  targetLoader?: 'forge' | 'fabric';
+  sourceVersionRange?: string;
+  targetVersionRange?: string;
   transform: (content: string) => string;
 };
 
@@ -12,7 +17,10 @@ const RULES: Rule[] = [
   {
     id: 'forge-to-fabric-import-itemgroup',
     description: 'Forge CreativeModeTab -> Fabric ItemGroup import migration',
-    when: (req) => req.sourceLoader === 'forge' && req.targetLoader === 'fabric',
+    confidence: 0.82,
+    sourceLoader: 'forge',
+    targetLoader: 'fabric',
+    targetVersionRange: '>=1.19.0',
     transform: (content) =>
       content
         .replace(/import\s+net\.minecraft\.world\.item\.CreativeModeTab;/g, 'import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;')
@@ -21,7 +29,10 @@ const RULES: Rule[] = [
   {
     id: 'forge-to-fabric-registryobject',
     description: 'Forge RegistryObject usage to direct registry access placeholder',
-    when: (req) => req.sourceLoader === 'forge' && req.targetLoader === 'fabric',
+    confidence: 0.73,
+    sourceLoader: 'forge',
+    targetLoader: 'fabric',
+    targetVersionRange: '>=1.16.0',
     transform: (content) =>
       content
         .replace(/import\s+net\.minecraftforge\.registries\.RegistryObject;/g, '')
@@ -30,7 +41,10 @@ const RULES: Rule[] = [
   {
     id: 'fabric-to-forge-registry-register',
     description: 'Fabric Registry.register hints converted for Forge DeferredRegister',
-    when: (req) => req.sourceLoader === 'fabric' && req.targetLoader === 'forge',
+    confidence: 0.71,
+    sourceLoader: 'fabric',
+    targetLoader: 'forge',
+    targetVersionRange: '>=1.16.0',
     transform: (content) =>
       content.replace(
         /Registry\.register\(([^;]+)\);/g,
@@ -40,13 +54,15 @@ const RULES: Rule[] = [
   {
     id: 'mc-1-20-5-datapack-registry-rename',
     description: 'Version hint: BuiltinRegistries -> BuiltInRegistries',
-    when: (req) => req.targetMinecraftVersion.startsWith('1.20.5') || req.targetMinecraftVersion.startsWith('1.20.6'),
+    confidence: 0.9,
+    targetVersionRange: '>=1.20.5 <1.21.0',
     transform: (content) => content.replace(/BuiltinRegistries/g, 'BuiltInRegistries')
   },
   {
     id: 'mc-1-21-resource-location-ctor',
     description: 'Version hint: new ResourceLocation(ns, path) -> ResourceLocation.fromNamespaceAndPath',
-    when: (req) => req.targetMinecraftVersion.startsWith('1.21'),
+    confidence: 0.92,
+    targetVersionRange: '>=1.21.0',
     transform: (content) =>
       content.replace(
         /new\s+ResourceLocation\(([^,]+),\s*([^)]+)\)/g,
@@ -56,7 +72,16 @@ const RULES: Rule[] = [
 ];
 
 export function runDeterministicRuleTransform(req: RuleTransformRequest): RuleTransformPlan {
-  const applicableRules = RULES.filter((rule) => rule.when(req));
+  const matchedKnowledgeEntries = getMatchedKnowledgeEntries({
+    sourceLoader: req.sourceLoader,
+    targetLoader: req.targetLoader,
+    sourceVersion: req.sourceMinecraftVersion,
+    targetVersion: req.targetMinecraftVersion
+  });
+
+  const ruleDecisions: RuleSelectionDecision[] = RULES.map((rule) => selectRule(rule, req));
+  const applicableRules = RULES.filter((rule) => ruleDecisions.find((d) => d.ruleId === rule.id)?.selected);
+
   const deterministicRuleOrder = applicableRules.map((r) => r.id).sort();
   const orderedRules = deterministicRuleOrder
     .map((id) => applicableRules.find((r) => r.id === id))
@@ -99,6 +124,8 @@ export function runDeterministicRuleTransform(req: RuleTransformRequest): RuleTr
   return {
     mode: req.mode,
     deterministicRuleOrder,
+    matchedKnowledgeEntryIds: matchedKnowledgeEntries.map((entry) => entry.id),
+    ruleDecisions,
     backupPlan: {
       enabled: req.backup.enabled,
       strategy: req.backup.strategy,
@@ -121,6 +148,28 @@ export function runDeterministicRuleTransform(req: RuleTransformRequest): RuleTr
       'Always run preview and tests before applying changes to real projects.'
     ],
     results
+  };
+}
+
+function selectRule(rule: Rule, req: RuleTransformRequest): RuleSelectionDecision {
+  if (rule.sourceLoader && rule.sourceLoader !== req.sourceLoader) {
+    return { ruleId: rule.id, selected: false, confidence: rule.confidence, reason: `source loader mismatch (${req.sourceLoader})` };
+  }
+  if (rule.targetLoader && rule.targetLoader !== req.targetLoader) {
+    return { ruleId: rule.id, selected: false, confidence: rule.confidence, reason: `target loader mismatch (${req.targetLoader})` };
+  }
+  if (rule.sourceVersionRange && !matchesVersion(req.sourceMinecraftVersion, rule.sourceVersionRange)) {
+    return { ruleId: rule.id, selected: false, confidence: rule.confidence, reason: `source version not in ${rule.sourceVersionRange}` };
+  }
+  if (rule.targetVersionRange && !matchesVersion(req.targetMinecraftVersion, rule.targetVersionRange)) {
+    return { ruleId: rule.id, selected: false, confidence: rule.confidence, reason: `target version not in ${rule.targetVersionRange}` };
+  }
+
+  return {
+    ruleId: rule.id,
+    selected: true,
+    confidence: rule.confidence,
+    reason: `selected: ${rule.description}`
   };
 }
 

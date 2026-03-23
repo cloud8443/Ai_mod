@@ -15,6 +15,7 @@
     "build:electron": "tsc -p electron/tsconfig.json",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
+    "test": "npm run build:electron && node --test tests/**/*.test.js",
     "dist:win": "npm run build && electron-builder --win",
     "dist": "npm run build && electron-builder"
   },

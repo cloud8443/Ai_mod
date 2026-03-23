@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { AIProvider, ParsedModMetadata, RuleTransformPlan } from './lib/types/contracts';
+import type { AIProvider, CompatibilityReport, ParsedModMetadata, RuleTransformPlan } from './lib/types/contracts';
 
 const SAMPLE_FORGE = `[mods]
 modLoader="javafml"
@@ -51,6 +51,7 @@ export function App() {
   const [oauthLog, setOauthLog] = useState('');
   const [goals, setGoals] = useState('Keep behavior stable and prioritize compile-time break fixes.');
   const [reportText, setReportText] = useState('');
+  const [compatibilityReport, setCompatibilityReport] = useState<CompatibilityReport | null>(null);
   const [planText, setPlanText] = useState('');
   const [codeInput, setCodeInput] = useState(SAMPLE_CODE);
   const [transformPlan, setTransformPlan] = useState<RuleTransformPlan | null>(null);
@@ -70,6 +71,7 @@ export function App() {
 
   async function onAnalyze() {
     const report = await window.mcModConverter.analyzeCompatibility(request);
+    setCompatibilityReport(report);
     setReportText(JSON.stringify(report, null, 2));
   }
 
@@ -211,13 +213,42 @@ export function App() {
           <pre>{JSON.stringify(metadata, null, 2)}</pre>
         </section>
         <section>
-          <h2>Report / Transform Result</h2>
+          <h2>Compatibility / Transform Output</h2>
+          {compatibilityReport ? (
+            <div>
+              <p><strong>Score:</strong> {compatibilityReport.score} / 100</p>
+              <p><strong>Confidence:</strong> {(compatibilityReport.confidence * 100).toFixed(1)}%</p>
+              <p><strong>Summary:</strong> {compatibilityReport.summary}</p>
+              <p><strong>Matched knowledge:</strong> {compatibilityReport.matchedKnowledgeEntryIds.join(', ') || 'none'}</p>
+              <p><strong>Confidence factors:</strong></p>
+              <ul>
+                {compatibilityReport.confidenceFactors.map((factor) => (
+                  <li key={`${factor.label}-${factor.detail}`}>
+                    {factor.label} ({factor.impact >= 0 ? '+' : ''}{(factor.impact * 100).toFixed(1)}%): {factor.detail}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <pre>{reportText || 'Run compatibility analysis or transform stub.'}</pre>
         </section>
       </div>
 
       <section>
         <h2>Rules Plan</h2>
+        {transformPlan ? (
+          <div>
+            <p><strong>Matched knowledge:</strong> {transformPlan.matchedKnowledgeEntryIds.join(', ') || 'none'}</p>
+            <p><strong>Rule decisions:</strong></p>
+            <ul>
+              {transformPlan.ruleDecisions.map((decision) => (
+                <li key={decision.ruleId}>
+                  {decision.ruleId} — {decision.selected ? 'selected' : 'skipped'} ({(decision.confidence * 100).toFixed(0)}%): {decision.reason}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <pre>{transformPlan ? JSON.stringify(transformPlan, null, 2) : 'Run preview/apply to inspect deterministic rule output.'}</pre>
       </section>
 

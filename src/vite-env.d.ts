@@ -7,14 +7,15 @@ import type {
   ParsedModMetadata,
   RuleTransformPlan,
   RuleTransformRequest,
-  StoredSecret
+  StoredSecret,
+  CompatibilityReport
 } from './lib/types/contracts';
 
 declare global {
   interface Window {
     mcModConverter: {
       parseMetadata: (files: { name: string; content: string }[]) => Promise<ParsedModMetadata[]>;
-      analyzeCompatibility: (request: ConversionRequest) => Promise<unknown>;
+      analyzeCompatibility: (request: ConversionRequest) => Promise<CompatibilityReport>;
       buildPrompt: (request: ConversionRequest) => Promise<string>;
       generatePlan: (request: AIRequest) => Promise<string>;
       transformStub: (request: ConversionRequest) => Promise<unknown>;

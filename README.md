@@ -14,7 +14,9 @@ This project is intentionally conservative:
 
 ### 1) Metadata + compatibility workflow
 - Parses Forge `mods.toml`, Fabric `fabric.mod.json`, and legacy `mcmod.info`
-- Scores likely compatibility and surfaces metadata-level issues
+- Uses semantic version-range parsing (Maven + semver-style ranges) for MC and dependency checks
+- Detects dependency missing/conflict scenarios across parsed mods
+- Produces confidence scoring with explainable factors and matched migration knowledge IDs
 
 ### 2) AI planning (still multi-provider)
 - OpenAI (`/v1/responses`)
@@ -23,8 +25,10 @@ This project is intentionally conservative:
 
 ### 3) Deterministic transformation rules engine (new)
 - Fixed, deterministic rule ordering
+- Rule selection is version-aware + loader-aware with per-rule confidence
 - Preview mode (default recommended)
 - Apply mode for transformed output payloads
+- Returns selected/skipped rule reasons and matched migration knowledge IDs
 - Backup/rollback support **design contract** included in output manifest:
   - manifest ID
   - backup strategy
@@ -51,11 +55,12 @@ npm install
 npm run dev
 ```
 
-## Typecheck + build
+## Typecheck + build + tests
 
 ```bash
 npm run typecheck
 npm run build
+npm test
 ```
 
 ## Build Windows installer locally
@@ -116,7 +121,10 @@ Behavior:
 ## Important limitations
 
 - Not a one-click guaranteed converter
+- Knowledge base is representative (old/mid/latest ranges) and not exhaustive for every mod ecosystem edge-case
+- Semantic range parsing improves metadata checks, but malformed/non-standard metadata can still reduce accuracy
 - Rules engine is deterministic but regex-based (not semantic Java/Kotlin transforms)
+- Rule confidence is heuristic and should be treated as guidance, not proof of correctness
 - No project-wide filesystem rewrite pipeline yet (engine currently transforms provided file payloads)
 - OAuth device flow depends on endpoint/client availability and may require provider-side configuration
 - Secret storage uses `safeStorage` when available; otherwise plaintext fallback is used in app data
@@ -130,7 +138,8 @@ Behavior:
 - `electron/tokenStore.ts` – local secret persistence abstraction
 - `electron/openaiOAuth.ts` – OpenAI device-flow helpers
 - `src/lib/parsers/` – metadata parsing
-- `src/lib/analysis/` – compatibility scoring
+- `src/lib/analysis/` – compatibility scoring + confidence factors
+- `src/lib/knowledge/migrationKnowledge.ts` – versioned migration KB + loader API rename mappings
 - `src/lib/ai/` – AI provider clients
 - `src/lib/transform/rulesEngine.ts` – deterministic migration rules engine
 - `src/App.tsx` – UI for metadata, OAuth, credential store, rules preview/apply

@@ -1,11 +1,37 @@
 import semver from 'semver';
-import type { CompatibilityIssue, CompatibilityReport, ParsedModMetadata } from '../types/contracts';
+import {
+  getMatchedKnowledgeEntries,
+  LOADER_API_RENAMES,
+  matchesVersion,
+  normalizeRange
+} from '../knowledge/migrationKnowledge';
+import type { CompatibilityFactor, CompatibilityIssue, CompatibilityReport, ParsedModMetadata } from '../types/contracts';
 
 export function analyzeCompatibility(
   source: ParsedModMetadata[],
   target: { minecraftVersion: string; loader: 'forge' | 'fabric' }
 ): CompatibilityReport {
   const issues: CompatibilityIssue[] = [];
+  const confidenceFactors: CompatibilityFactor[] = [];
+
+  const targetVersion = semver.coerce(target.minecraftVersion)?.version ?? target.minecraftVersion;
+  const primarySourceLoader = inferPrimaryLoader(source);
+  const matchedKnowledge = getMatchedKnowledgeEntries({
+    sourceLoader: primarySourceLoader,
+    targetLoader: target.loader,
+    sourceVersion: source[0]?.minecraftVersions[0],
+    targetVersion
+  });
+
+  if (matchedKnowledge.length > 0) {
+    confidenceFactors.push({
+      label: 'knowledge-match',
+      impact: 0.1,
+      detail: `${matchedKnowledge.length} migration knowledge entries matched this conversion scenario.`
+    });
+  }
+
+  const modsById = new Map(source.map((mod) => [mod.modId, mod]));
 
   for (const mod of source) {
     if (mod.loader !== target.loader) {
@@ -15,16 +41,26 @@ export function analyzeCompatibility(
         modId: mod.modId,
         message: `${mod.modId} is ${mod.loader}, target loader is ${target.loader}. Cross-loader conversion is typically manual.`
       });
+      confidenceFactors.push({
+        label: 'cross-loader-conversion',
+        impact: -0.12,
+        detail: `${mod.modId} requires API and lifecycle migration across loaders.`
+      });
     }
 
     if (mod.minecraftVersions.length > 0) {
-      const supportsTarget = mod.minecraftVersions.some((range) => isLikelyCompatible(target.minecraftVersion, range));
+      const supportsTarget = mod.minecraftVersions.some((range) => isCompatibleWithRange(targetVersion, range));
       if (!supportsTarget) {
         issues.push({
           severity: 'warn',
           code: 'MC_VERSION_UNSUPPORTED',
           modId: mod.modId,
           message: `${mod.modId} metadata does not indicate compatibility with Minecraft ${target.minecraftVersion}.`
+        });
+        confidenceFactors.push({
+          label: 'target-version-outside-range',
+          impact: -0.08,
+          detail: `${mod.modId} declares ranges ${mod.minecraftVersions.join(', ') || 'none'} which do not include ${target.minecraftVersion}.`
         });
       }
     } else {
@@ -34,66 +70,117 @@ export function analyzeCompatibility(
         modId: mod.modId,
         message: `${mod.modId} has no explicit Minecraft version range in parsed metadata.`
       });
-    }
-
-    const riskyDeps = mod.dependencies.filter((d) => d.required && !d.versionRange);
-    for (const dep of riskyDeps) {
-      issues.push({
-        severity: 'info',
-        code: 'DEP_VERSION_UNKNOWN',
-        modId: mod.modId,
-        message: `${mod.modId} requires dependency ${dep.id} without a parsed version constraint.`
+      confidenceFactors.push({
+        label: 'missing-version-range',
+        impact: -0.04,
+        detail: `${mod.modId} does not expose explicit minecraft dependency version metadata.`
       });
     }
+
+    for (const dep of mod.dependencies) {
+      if (dep.required && !dep.versionRange) {
+        issues.push({
+          severity: 'info',
+          code: 'DEP_VERSION_UNKNOWN',
+          modId: mod.modId,
+          message: `${mod.modId} requires dependency ${dep.id} without a parsed version constraint.`
+        });
+      }
+
+      const dependencyMod = modsById.get(dep.id);
+      if (dep.required && !dependencyMod && !isPlatformDependency(dep.id)) {
+        issues.push({
+          severity: 'warn',
+          code: 'DEP_MISSING',
+          modId: mod.modId,
+          message: `${mod.modId} requires ${dep.id}, but it was not found in provided metadata set.`
+        });
+        confidenceFactors.push({
+          label: 'missing-required-dependency',
+          impact: -0.1,
+          detail: `${mod.modId} depends on ${dep.id}, which may block startup unless supplied.`
+        });
+      }
+
+      if (dependencyMod && dep.versionRange && dependencyMod.version) {
+        const depOk = isCompatibleWithRange(dependencyMod.version, dep.versionRange);
+        if (!depOk) {
+          issues.push({
+            severity: 'warn',
+            code: 'DEP_VERSION_CONFLICT',
+            modId: mod.modId,
+            message: `${mod.modId} expects ${dep.id} ${dep.versionRange}, but detected ${dependencyMod.version}.`
+          });
+          confidenceFactors.push({
+            label: 'dependency-version-conflict',
+            impact: -0.14,
+            detail: `${mod.modId} has an unsatisfied requirement against ${dep.id}.`
+          });
+        }
+      }
+    }
+  }
+
+  const loaderRenames = LOADER_API_RENAMES.filter(
+    (rename) =>
+      rename.fromLoader === primarySourceLoader &&
+      rename.toLoader === target.loader &&
+      matchesVersion(targetVersion, rename.minecraftRange)
+  );
+
+  if (loaderRenames.length > 0) {
+    confidenceFactors.push({
+      label: 'known-api-renames',
+      impact: 0.06,
+      detail: `${loaderRenames.length} known loader API rename mappings can guide deterministic migration.`
+    });
   }
 
   const errorCount = issues.filter((i) => i.severity === 'error').length;
   const warnCount = issues.filter((i) => i.severity === 'warn').length;
   const score = Math.max(0, 100 - errorCount * 40 - warnCount * 15);
 
+  const confidence = clamp(
+    0.55 +
+      confidenceFactors.reduce((acc, factor) => acc + factor.impact, 0) -
+      errorCount * 0.2 -
+      warnCount * 0.06,
+    0.05,
+    0.99
+  );
+
   return {
     score,
+    confidence,
     summary:
       warnCount === 0
         ? 'No obvious metadata-level blockers found. Manual source/API changes may still be required.'
         : `${warnCount} potential compatibility warnings detected. Expect manual refactoring and testing.`,
-    issues
+    issues,
+    matchedKnowledgeEntryIds: matchedKnowledge.map((entry) => entry.id),
+    confidenceFactors
   };
 }
 
-function isLikelyCompatible(targetVersion: string, range: string): boolean {
-  if (range.includes('[') || range.includes('(')) {
-    const normalized = mavenRangeToSemver(range);
-    if (normalized) {
-      return semver.satisfies(semver.coerce(targetVersion) ?? targetVersion, normalized, { includePrerelease: true });
-    }
-  }
-
-  const coerced = semver.coerce(targetVersion);
-  const coercedRange = semver.coerce(range);
-  if (coerced && coercedRange) {
-    return coerced.version.startsWith(coercedRange.version.split('.').slice(0, 2).join('.'));
-  }
-
-  return range.includes(targetVersion);
+function inferPrimaryLoader(mods: ParsedModMetadata[]): 'forge' | 'fabric' {
+  const fabricCount = mods.filter((m) => m.loader === 'fabric').length;
+  return fabricCount > mods.length / 2 ? 'fabric' : 'forge';
 }
 
-function mavenRangeToSemver(mavenRange: string): string | null {
-  const match = mavenRange.match(/^([\[(])([^,]*),([^\])]*)([\])])$/);
-  if (!match) return null;
+function isCompatibleWithRange(version: string, range: string): boolean {
+  const coerced = semver.coerce(version);
+  if (!coerced) return false;
 
-  const [, startIncl, start, end, endIncl] = match;
-  const clauses: string[] = [];
+  const normalized = normalizeRange(range);
+  if (!normalized) return false;
 
-  if (start.trim()) {
-    const v = semver.coerce(start.trim())?.version;
-    if (v) clauses.push(`${startIncl === '[' ? '>=' : '>'}${v}`);
-  }
+  return semver.satisfies(coerced, normalized, { includePrerelease: true, loose: true });
+}
 
-  if (end.trim()) {
-    const v = semver.coerce(end.trim())?.version;
-    if (v) clauses.push(`${endIncl === ']' ? '<=' : '<'}${v}`);
-  }
+function isPlatformDependency(depId: string): boolean {
+  return ['minecraft', 'fabricloader', 'forge', 'java'].includes(depId.toLowerCase());
+}
 
-  return clauses.length ? clauses.join(' ') : null;
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
