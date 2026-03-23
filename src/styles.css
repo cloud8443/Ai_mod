@@ -1,0 +1,96 @@
+:root {
+  font-family: Inter, Segoe UI, Roboto, sans-serif;
+  background: #0f1115;
+  color: #e8edf3;
+}
+
+body {
+  margin: 0;
+  background: #0f1115;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.subtle {
+  color: #b3becc;
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+}
+
+.grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.grid.controls {
+  margin: 12px 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+section,
+label {
+  display: block;
+}
+
+h1, h2 {
+  margin-top: 0;
+}
+
+textarea,
+input,
+select {
+  width: 100%;
+  background: #151922;
+  color: #e8edf3;
+  border: 1px solid #2c3545;
+  border-radius: 8px;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+textarea {
+  min-height: 180px;
+  resize: vertical;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+button {
+  background: #2a60ff;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #1f4ddb;
+}
+
+pre {
+  background: #151922;
+  border: 1px solid #2c3545;
+  border-radius: 8px;
+  padding: 12px;
+  max-height: 340px;
+  overflow: auto;
+}
+
+@media (max-width: 980px) {
+  .grid.two,
+  .grid.controls {
+    grid-template-columns: 1fr;
+  }
+}
