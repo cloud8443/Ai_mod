@@ -2,7 +2,7 @@
   "name": "mc-mod-converter-ai",
   "version": "0.1.0",
   "description": "MVP desktop assistant scaffold for planning Minecraft mod version conversion",
-  "main": "dist-electron/main.js",
+  "main": "dist-electron/electron/main.js",
   "author": "",
   "license": "MIT",
   "private": true,
@@ -15,11 +15,14 @@
     "build:electron": "tsc -p electron/tsconfig.json",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
-    "test": "npm run build:electron && node --test tests/**/*.test.js",
+    "dataset:refresh": "node scripts/refresh-transform-dataset.mjs",
+    "test:regression": "node scripts/run-regression.mjs",
+    "test": "npm run test:regression",
     "dist:win": "npm run build && electron-builder --win",
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {
+    "java-parser": "^3.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "semver": "^7.6.3"

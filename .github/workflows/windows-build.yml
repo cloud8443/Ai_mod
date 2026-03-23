@@ -34,6 +34,14 @@ jobs:
       - name: Build Windows artifact (NSIS)
         run: npm run dist:win
 
+      - name: Generate SHA256 checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem dist -Filter *.exe | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash *$($_.Name)" | Out-File -FilePath "$($_.FullName).sha256" -Encoding ascii
+          }
+
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -41,5 +49,6 @@ jobs:
           path: |
             dist/*.exe
             dist/*.yml
+            dist/*.sha256
             dist/win-unpacked/**
           if-no-files-found: error

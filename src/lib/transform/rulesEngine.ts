@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { getMatchedKnowledgeEntries, matchesVersion } from '../knowledge/migrationKnowledge';
 import type { RuleSelectionDecision, RuleTransformPlan, RuleTransformRequest } from '../types/contracts';
+import { runJavaAstAwareTransform } from './javaAstTransform';
 
 type Rule = {
   id: string;
@@ -88,11 +89,30 @@ export function runDeterministicRuleTransform(req: RuleTransformRequest): RuleTr
     .filter((r): r is Rule => Boolean(r));
 
   let totalRuleApplications = 0;
+  const astWarnings: string[] = [];
 
   const results = req.files.map((file) => {
     let next = file.content;
     const beforeHash = hash(file.content);
     const appliedRuleIds: string[] = [];
+
+    const astResult = runJavaAstAwareTransform({
+      content: next,
+      sourceLoader: req.sourceLoader,
+      targetLoader: req.targetLoader,
+      sourceMinecraftVersion: req.sourceMinecraftVersion,
+      targetMinecraftVersion: req.targetMinecraftVersion
+    });
+
+    if (astResult.warnings.length > 0) {
+      astWarnings.push(`${file.path}: ${astResult.warnings.join(' | ')}`);
+    }
+
+    if (astResult.changed) {
+      next = astResult.content;
+      appliedRuleIds.push(...astResult.appliedMappingIds.map((id) => `ast:${id}`));
+      totalRuleApplications += astResult.appliedMappingIds.length;
+    }
 
     for (const rule of orderedRules) {
       const transformed = rule.transform(next);
@@ -144,7 +164,9 @@ export function runDeterministicRuleTransform(req: RuleTransformRequest): RuleTr
       totalRuleApplications
     },
     warnings: [
-      'Rules are deterministic and regex-based; semantic Java/Kotlin AST rewrites are not included.',
+      'AST-aware Java transform scaffold is enabled with parser validation for conservative import/class/method rename mappings.',
+      'Rules remain deterministic; broad semantic Java/Kotlin project-wide rewrites are not yet included.',
+      ...astWarnings,
       'Always run preview and tests before applying changes to real projects.'
     ],
     results

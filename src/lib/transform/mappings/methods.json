@@ -1,0 +1,18 @@
+[
+  {
+    "id": "resource-location-ctor-1-21",
+    "className": "ResourceLocation",
+    "from": "new ResourceLocation",
+    "to": "ResourceLocation.fromNamespaceAndPath",
+    "targetVersionRange": ">=1.21.0"
+  },
+  {
+    "id": "creative-tab-prefix-forge-to-fabric",
+    "className": "CreativeModeTab",
+    "from": "CreativeModeTab",
+    "to": "ItemGroupEvents",
+    "sourceLoader": "forge",
+    "targetLoader": "fabric",
+    "targetVersionRange": ">=1.19.0"
+  }
+]

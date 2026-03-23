@@ -23,9 +23,13 @@ This project is intentionally conservative:
 - Anthropic (`/v1/messages`)
 - Gemini (`generateContent`)
 
-### 3) Deterministic transformation rules engine (new)
+### 3) Deterministic + AST-aware transformation pipeline (phase 2)
 - Fixed, deterministic rule ordering
 - Rule selection is version-aware + loader-aware with per-rule confidence
+- **AST-aware Java scaffold** (parser-validated) runs first for conservative mappings:
+  - import renames
+  - class identifier renames
+  - selected method/constructor migration patterns
 - Preview mode (default recommended)
 - Apply mode for transformed output payloads
 - Returns selected/skipped rule reasons and matched migration knowledge IDs
@@ -34,7 +38,13 @@ This project is intentionally conservative:
   - backup strategy
   - rollback instructions
 
-> Current rules are regex-based and intentionally narrow (common Forge↔Fabric + version migration hints). They are not AST-safe refactors.
+Mapping datasets are expandable JSON sources in:
+- `src/lib/transform/mappings/imports.json`
+- `src/lib/transform/mappings/classes.json`
+- `src/lib/transform/mappings/methods.json`
+
+Generated runtime mapping module:
+- `src/lib/transform/generatedMappings.ts`
 
 ### 4) OpenAI OAuth + secure local persistence (new)
 - Device-flow helpers for OpenAI OAuth endpoints (client_id required)
@@ -61,6 +71,16 @@ npm run dev
 npm run typecheck
 npm run build
 npm test
+```
+
+## Mapping dataset + regression commands
+
+```bash
+# regenerate src/lib/transform/generatedMappings.ts from JSON datasets
+npm run dataset:refresh
+
+# build electron lib + run all node regression tests
+npm run test:regression
 ```
 
 ## Build Windows installer locally
@@ -102,19 +122,30 @@ Artifacts are placed in `dist/`.
 
 ---
 
-## GitHub Actions CI (Windows build)
+## GitHub Actions CI (Windows build artifact)
 
 Workflow file: `.github/workflows/windows-build.yml`
 
 Behavior:
-- Trigger: push/PR/manual
+- Trigger: push/PR/manual (`workflow_dispatch`)
 - Runner: `windows-latest`
 - Steps:
   - `npm ci`
   - `npm run typecheck`
   - `npm run build`
   - `npm run dist:win`
-  - upload `dist/*.exe`, `dist/*.yml`, `dist/win-unpacked/**`
+  - generate SHA256 checksums for installer artifacts
+  - upload `dist/*.exe`, `dist/*.yml`, `dist/*.sha256`, `dist/win-unpacked/**`
+
+### Download artifact from GitHub Actions
+1. Push branch to GitHub (or manually run workflow from **Actions → Windows Build → Run workflow**).
+2. Open the finished workflow run.
+3. In **Artifacts**, download `mc-mod-converter-ai-windows`.
+4. Unzip and verify checksum (PowerShell example):
+   ```powershell
+   Get-FileHash .\"MC Mod Converter AI Setup *.exe" -Algorithm SHA256
+   Get-Content .\"MC Mod Converter AI Setup *.exe.sha256"
+   ```
 
 ---
 
@@ -141,5 +172,9 @@ Behavior:
 - `src/lib/analysis/` – compatibility scoring + confidence factors
 - `src/lib/knowledge/migrationKnowledge.ts` – versioned migration KB + loader API rename mappings
 - `src/lib/ai/` – AI provider clients
+- `src/lib/transform/javaAstTransform.ts` – parser-validated Java transform scaffold
+- `src/lib/transform/mappings/*.json` – editable mapping dataset sources
+- `src/lib/transform/generatedMappings.ts` – generated mapping module used at runtime
 - `src/lib/transform/rulesEngine.ts` – deterministic migration rules engine
+- `tests/fixtures/regression/` – Java regression fixtures for transform output
 - `src/App.tsx` – UI for metadata, OAuth, credential store, rules preview/apply
