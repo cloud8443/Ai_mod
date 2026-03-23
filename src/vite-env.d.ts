@@ -8,7 +8,9 @@ import type {
   RuleTransformPlan,
   RuleTransformRequest,
   StoredSecret,
-  CompatibilityReport
+  CompatibilityReport,
+  OAuthLinkStartResult,
+  OAuthTokenResult
 } from './lib/types/contracts';
 
 declare global {
@@ -23,18 +25,8 @@ declare global {
       setSecret: (provider: AIProvider, value: string) => Promise<StoredSecret>;
       getSecret: (provider: AIProvider) => Promise<StoredSecret | null>;
       clearSecret: (provider: AIProvider) => Promise<{ ok: boolean }>;
-      startOpenAILinkFlow: (params: { clientId: string; redirectUri?: string; openBrowser: boolean }) => Promise<{
-        authorizationUrl: string;
-        state: string;
-        redirectUri: string;
-        codeChallengeMethod: 'S256';
-      }>;
-      completeOpenAILinkFlow: (params: { clientId: string; codeOrCallbackUrl: string }) => Promise<{
-        access_token: string;
-        refresh_token?: string;
-        expires_in?: number;
-        token_type?: string;
-      }>;
+      startOpenAILinkFlow: (params: { clientId: string; redirectUri?: string; openBrowser: boolean }) => Promise<OAuthLinkStartResult>;
+      completeOpenAILinkFlow: (params: { clientId: string; codeOrCallbackUrl: string }) => Promise<OAuthTokenResult>;
     };
   }
 }

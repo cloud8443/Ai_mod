@@ -18,8 +18,8 @@ Cross-loader conversion is intentionally blocked in analyzer/rules/UI/prompts.
 
 1) **One-Click Mode (default UX)**
 - Set loader/version, paste metadata + code, click one main button
-- Auto chain: parse -> compatibility check -> prompt build -> rules preview
-- Beginner-friendly Korean copy + safer defaults
+- Auto chain: parse -> compatibility check -> optimized prompt build -> rules preview
+- No separate "goal" input required (uses built-in Korean-friendly optimization template internally)
 
 2) **Advanced mode (optional/collapsible)**
 - Expand only when you need per-step manual control
@@ -41,9 +41,10 @@ Cross-loader conversion is intentionally blocked in analyzer/rules/UI/prompts.
 - Rollback guidance in backup manifest contract
 
 6) **OpenAI OAuth (link-based approval UX + manual fallback)**
-- Generate authorization URL in app
+- Generate authorization URL in app (shows configured OAuth endpoint)
 - User opens link and approves in browser
 - Paste callback URL or auth code to complete login quickly
+- If OAuth fails, paste manual token and continue one-click (not blocked)
 - Token persisted locally via secure storage abstraction
 
 7) **i18n (English + Korean)
@@ -63,7 +64,7 @@ npm run dev
 
 1. **Open app and set basics**: choose source loader (Forge/Fabric), set target Minecraft version (same loader only).
 2. **Paste inputs**: mods metadata (`mods.toml` / `fabric.mod.json`) and a Java code snippet.
-3. **Click one button**: run **One-Click Mode** to auto execute parse -> analyze -> prompt -> rules preview.
+3. **Click one button**: run **One-Click Mode** to auto execute parse -> analyze -> optimized built-in prompt -> rules preview.
    - Optional: paste OpenAI API key/access token first to also get AI plan text.
    - If OAuth link fails, use manual token input and continue (flow is not blocked).
 

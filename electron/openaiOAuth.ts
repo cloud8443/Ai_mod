@@ -1,8 +1,9 @@
 import crypto from 'node:crypto';
 import type { OAuthLinkStartResult, OAuthTokenResult } from '../src/lib/types/contracts.js';
 
-const OPENAI_OAUTH_BASE = 'https://auth.openai.com/oauth';
+const OPENAI_OAUTH_BASE = process.env.OPENAI_OAUTH_BASE?.trim() || 'https://auth.openai.com/oauth';
 const DEFAULT_REDIRECT_URI = 'https://localhost/callback';
+const TOKEN_TIMEOUT_MS = 20_000;
 
 type PendingPkce = {
   state: string;
@@ -33,6 +34,44 @@ function assertClientId(raw: string | undefined): string {
     throw new Error('Missing OpenAI OAuth client_id. Enter a valid client_id or use manual token input.');
   }
   return clientId;
+}
+
+function parseCode(raw: string, pending: PendingPkce): string {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    throw new Error('Missing authorization code. Paste callback URL/code or use manual token input.');
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    const url = new URL(trimmed);
+    const callbackState = url.searchParams.get('state');
+    const code = url.searchParams.get('code') ?? '';
+
+    if (!code) {
+      throw new Error('Callback URL does not contain code. Paste callback URL/code or use manual token input.');
+    }
+
+    if (callbackState && callbackState !== pending.state) {
+      throw new Error('OAuth state mismatch. Restart link login or use manual token input.');
+    }
+
+    return code;
+  }
+
+  if (trimmed.includes('?')) {
+    const query = trimmed.startsWith('?') ? trimmed.slice(1) : trimmed;
+    const params = new URLSearchParams(query);
+    const code = params.get('code');
+    const callbackState = params.get('state');
+    if (code) {
+      if (callbackState && callbackState !== pending.state) {
+        throw new Error('OAuth state mismatch. Restart link login or use manual token input.');
+      }
+      return code;
+    }
+  }
+
+  return trimmed;
 }
 
 export async function startOpenAILinkFlow(params: {
@@ -68,7 +107,8 @@ export async function startOpenAILinkFlow(params: {
       authorizationUrl,
       state,
       redirectUri,
-      codeChallengeMethod: 'S256'
+      codeChallengeMethod: 'S256',
+      oauthBaseUrl: OPENAI_OAUTH_BASE
     };
   } catch (error) {
     pendingByClient.delete(clientId);
@@ -86,27 +126,10 @@ export async function completeOpenAILinkFlow(params: {
     throw new Error('No pending OAuth session found. Start link flow first or paste a manual token.');
   }
 
-  const trimmed = params.codeOrCallbackUrl.trim();
-  const looksLikeUrl = /^https?:\/\//i.test(trimmed);
-  let code = trimmed;
+  const code = parseCode(params.codeOrCallbackUrl, pending);
 
-  if (looksLikeUrl) {
-    const url = new URL(trimmed);
-    const callbackState = url.searchParams.get('state');
-    code = url.searchParams.get('code') ?? '';
-
-    if (!code) {
-      throw new Error('Callback URL does not contain code. Paste callback URL/code or use manual token input.');
-    }
-
-    if (callbackState && callbackState !== pending.state) {
-      throw new Error('OAuth state mismatch. Restart link login or use manual token input.');
-    }
-  }
-
-  if (!code) {
-    throw new Error('Missing authorization code. Paste callback URL/code or use manual token input.');
-  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TOKEN_TIMEOUT_MS);
 
   let res: Response;
   try {
@@ -119,10 +142,16 @@ export async function completeOpenAILinkFlow(params: {
         code,
         redirect_uri: pending.redirectUri,
         code_verifier: pending.codeVerifier
-      })
+      }),
+      signal: controller.signal
     });
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('OpenAI token endpoint request timed out. Retry, or use manual token input.');
+    }
     throw new Error(`OpenAI token endpoint request failed. Check network and retry, or use manual token input. (${error instanceof Error ? error.message : String(error)})`);
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!res.ok) {

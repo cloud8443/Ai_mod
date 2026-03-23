@@ -123,6 +123,7 @@ export interface OAuthLinkStartResult {
   state: string;
   redirectUri: string;
   codeChallengeMethod: 'S256';
+  oauthBaseUrl: string;
 }
 
 export interface OAuthTokenResult {

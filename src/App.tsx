@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AIProvider, CompatibilityReport, ParsedModMetadata, RuleTransformPlan } from './lib/types/contracts';
+import type { CompatibilityReport, ParsedModMetadata, RuleTransformPlan } from './lib/types/contracts';
 
 type Loader = 'forge' | 'fabric';
 type Lang = 'en' | 'ko';
@@ -15,6 +15,7 @@ type UiSettings = {
 };
 
 const DEFAULT_SETTINGS: UiSettings = { language: 'ko', showTerminal: false, autoScrollTerminal: true, verboseLogging: false };
+const DEFAULT_INTERNAL_GOALS = '기존 동작과 호환성을 최대한 유지하면서 컴파일/런타임 오류를 우선 최소화하고, 위험 요소는 근거와 함께 단계별로 제시해 주세요.';
 
 const TEXT = {
   en: {
@@ -26,26 +27,25 @@ const TEXT = {
     oneClickDesc: 'Set versions, paste metadata/code, then click once. The app runs parse → compatibility check → prompt build → rules preview automatically.',
     sourceLoader: 'Current loader',
     targetVersion: 'Target Minecraft version (same loader only)',
-    goals: 'What should be prioritized?',
     forgeMeta: 'Forge mods.toml (paste)',
     fabricMeta: 'Fabric fabric.mod.json (paste)',
     codeInput: 'Java code to preview rule changes',
     runOneClick: 'Run one-click conversion preview',
     running: 'Running...',
-    blocked: 'Cross-loader conversion is disabled. Source and target loader must be the same.',
     resultSummary: 'Latest one-click result',
     analysis: 'Compatibility analysis',
     prompt: 'Generated prompt',
     rulesPreview: 'Rules preview result',
-    authTitle: 'OpenAI login (optional if you paste token manually)',
-    authDesc: 'If link login fails, paste an OpenAI API key or access token below and continue.',
+    authTitle: 'OpenAI login (optional)',
+    authDesc: 'If OAuth link login fails, paste an OpenAI API key/access token below and continue one-click.',
     oauthClientId: 'OpenAI OAuth Client ID',
     redirectUri: 'Redirect URI',
+    oauthEndpoint: 'OAuth endpoint',
     startAuth: 'Generate approval link',
     openLink: 'Open approval link',
     callbackInput: 'Paste callback URL or authorization code',
     completeAuth: 'Complete login',
-    manualToken: 'Manual OpenAI API key / access token (recommended fallback)',
+    manualToken: 'Manual OpenAI API key / access token (fallback)',
     saveCred: 'Save token', loadCred: 'Load saved token', clearCred: 'Clear token',
     oauthStatus: 'OAuth status',
     advancedMode: 'Advanced mode (optional)',
@@ -62,26 +62,25 @@ const TEXT = {
     oneClickDesc: '버전 설정 후 메타데이터/코드를 붙여넣고 버튼 한 번만 누르세요. 파싱 → 호환성 분석 → 프롬프트 생성 → 규칙 미리보기를 자동으로 실행합니다.',
     sourceLoader: '현재 사용 중인 모드 로더',
     targetVersion: '목표 마인크래프트 버전 (같은 로더만 지원)',
-    goals: '원하는 목표를 쉽게 적어주세요',
     forgeMeta: 'Forge mods.toml 붙여넣기',
     fabricMeta: 'Fabric fabric.mod.json 붙여넣기',
     codeInput: '규칙 미리보기에 사용할 Java 코드',
     runOneClick: '원클릭 변환 미리보기 실행',
     running: '실행 중...',
-    blocked: '로더를 바꾸는 변환은 아직 지원하지 않습니다. 같은 로더(Forge→Forge 또는 Fabric→Fabric)로 진행해 주세요.',
     resultSummary: '최근 원클릭 실행 결과',
     analysis: '호환성 분석 결과',
     prompt: '생성된 프롬프트',
     rulesPreview: '규칙 미리보기 결과',
-    authTitle: 'OpenAI 로그인 (수동 토큰 입력 시 생략 가능)',
-    authDesc: '링크 로그인이 잘 안 되면 아래에 OpenAI API 키 또는 액세스 토큰을 붙여넣고 바로 진행하세요.',
+    authTitle: 'OpenAI 로그인 (선택)',
+    authDesc: 'OAuth 링크 로그인이 실패해도 아래 수동 토큰 입력으로 바로 원클릭을 계속할 수 있습니다.',
     oauthClientId: 'OpenAI OAuth 클라이언트 ID',
     redirectUri: '리다이렉트 URI',
+    oauthEndpoint: 'OAuth 엔드포인트',
     startAuth: '승인 링크 만들기',
     openLink: '승인 링크 열기',
     callbackInput: '콜백 URL 또는 인증 코드 붙여넣기',
     completeAuth: '로그인 완료하기',
-    manualToken: '수동 OpenAI API 키 / 액세스 토큰 (실패 시 가장 쉬운 방법)',
+    manualToken: '수동 OpenAI API 키 / 액세스 토큰 (실패 시 대체)',
     saveCred: '토큰 저장', loadCred: '저장 토큰 불러오기', clearCred: '토큰 삭제',
     oauthStatus: 'OAuth 진행 상태',
     advancedMode: '고급 모드 (필요할 때만 펼치기)',
@@ -101,10 +100,10 @@ function friendlyError(error: unknown, language: Lang): string {
   const raw = error instanceof Error ? error.message : String(error);
   if (language === 'ko') {
     if (/client_id|client id|clientId/i.test(raw)) {
-      return 'client_id가 비어 있습니다. OpenAI 플랫폼에서 발급한 OAuth Client ID를 입력하거나, 아래 수동 토큰 입력 칸에 API 키/액세스 토큰을 붙여넣어 바로 진행해 주세요.';
+      return 'client_id가 비어 있습니다. OpenAI 플랫폼에서 발급한 OAuth Client ID를 입력하거나, 아래 수동 토큰 칸에 API 키/액세스 토큰을 붙여넣어 바로 진행해 주세요.';
     }
-    if (/token exchange failed|failed to fetch|network|ECONN|fetch/i.test(raw)) {
-      return 'OpenAI 인증 서버 연결에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요. 계속 실패하면 수동 토큰 입력 칸에 API 키/액세스 토큰을 붙여넣고 원클릭을 진행할 수 있습니다.';
+    if (/token exchange failed|failed to fetch|network|ECONN|fetch|timeout|timed out/i.test(raw)) {
+      return 'OpenAI 인증 서버 연결/교환에 실패했습니다. 잠시 후 다시 시도하거나, 수동 토큰 입력 칸에 API 키/액세스 토큰을 붙여넣고 원클릭을 계속 진행해 주세요.';
     }
   }
   return raw;
@@ -116,14 +115,13 @@ export function App() {
   const [metadata, setMetadata] = useState<ParsedModMetadata[]>([]);
   const [targetVersion, setTargetVersion] = useState('1.20.4');
   const [sourceLoader, setSourceLoader] = useState<Loader>('forge');
-  const [provider] = useState<AIProvider>('openai');
   const [token, setToken] = useState('');
   const [clientId, setClientId] = useState('');
   const [redirectUri, setRedirectUri] = useState('https://localhost/callback');
   const [authUrl, setAuthUrl] = useState('');
+  const [oauthEndpoint, setOauthEndpoint] = useState('');
   const [codeOrUrl, setCodeOrUrl] = useState('');
   const [oauthLog, setOauthLog] = useState('');
-  const [goals, setGoals] = useState('컴파일 오류를 먼저 줄이고, 기존 동작을 최대한 유지하고 싶습니다.');
   const [reportText, setReportText] = useState('');
   const [compatibilityReport, setCompatibilityReport] = useState<CompatibilityReport | null>(null);
   const [promptText, setPromptText] = useState('');
@@ -141,8 +139,8 @@ export function App() {
   const targetLoader = sourceLoader;
 
   const request = useMemo(
-    () => ({ source: metadata, target: { minecraftVersion: targetVersion, loader: targetLoader }, userGoals: goals }),
-    [metadata, targetVersion, targetLoader, goals]
+    () => ({ source: metadata, target: { minecraftVersion: targetVersion, loader: targetLoader }, userGoals: DEFAULT_INTERNAL_GOALS }),
+    [metadata, targetVersion, targetLoader]
   );
 
   const pushLog = (level: LogLevel, message: string) => {
@@ -182,9 +180,10 @@ export function App() {
   async function onStartAuth() {
     const flow = await window.mcModConverter.startOpenAILinkFlow({ clientId, redirectUri, openBrowser: false });
     setAuthUrl(flow.authorizationUrl);
+    setOauthEndpoint(flow.oauthBaseUrl);
     setOauthLog(settings.language === 'ko'
-      ? '승인 링크가 생성되었습니다. 브라우저에서 승인 후 콜백 URL 또는 코드를 아래 칸에 붙여넣어 주세요.'
-      : 'Approval link created. Open it, approve, and paste callback URL or code below.');
+      ? '승인 링크가 생성되었습니다. 링크를 열어 승인한 뒤 콜백 URL 또는 코드를 붙여넣어 주세요. 실패하면 수동 토큰으로 계속 진행할 수 있습니다.'
+      : 'Approval link created. Open it, approve, and paste callback URL/code. If it fails, continue with manual token.');
   }
 
   async function onCompleteAuth() {
@@ -197,7 +196,7 @@ export function App() {
   }
 
   async function onGeneratePlan(prompt: string) {
-    const plan = await window.mcModConverter.generatePlan({ provider, credentials: { oauthAccessToken: token, apiKey: token }, prompt });
+    const plan = await window.mcModConverter.generatePlan({ provider: 'openai', credentials: { oauthAccessToken: token, apiKey: token }, prompt });
     setPlanText(plan);
     return plan;
   }
@@ -238,7 +237,7 @@ export function App() {
       pushLog('info', settings.language === 'ko' ? '원클릭: 호환성 분석 시작' : 'One-click: running compatibility analysis');
       const { nextRequest } = await onAnalyze(parsed);
 
-      pushLog('info', settings.language === 'ko' ? '원클릭: 프롬프트 생성 시작' : 'One-click: building prompt');
+      pushLog('info', settings.language === 'ko' ? '원클릭: 내장 최적화 프롬프트 생성 시작' : 'One-click: building built-in optimized prompt');
       const prompt = await window.mcModConverter.buildPrompt(nextRequest);
       setPromptText(prompt);
 
@@ -249,8 +248,8 @@ export function App() {
         pushLog(
           'warn',
           settings.language === 'ko'
-            ? '토큰이 없어 AI 계획 생성은 건너뛰었습니다. 아래 수동 토큰 입력 후 다시 실행할 수 있습니다.'
-            : 'Skipped AI plan generation (no token). Paste token and rerun anytime.'
+            ? '토큰이 없어 AI 계획 생성은 건너뛰었습니다. 수동 토큰을 입력하면 즉시 다시 실행할 수 있습니다.'
+            : 'Skipped AI plan generation (no token). Paste a token and rerun anytime.'
         );
       }
 
@@ -272,7 +271,9 @@ export function App() {
       await fn();
       pushLog('success', `${name} done.`);
     } catch (e) {
-      pushLog('error', friendlyError(e, settings.language));
+      const msg = friendlyError(e, settings.language);
+      setOauthLog((cur) => `${cur ? `${cur}\n` : ''}${msg}`);
+      pushLog('error', msg);
     }
   }
 
@@ -293,7 +294,6 @@ export function App() {
         <label>{t.sourceLoader}<select value={sourceLoader} onChange={(e) => setSourceLoader(e.target.value as Loader)}><option value="forge">Forge</option><option value="fabric">Fabric</option></select></label>
         <label>{t.targetVersion}<input value={targetVersion} onChange={(e) => setTargetVersion(e.target.value)} /></label>
       </div>
-      <label>{t.goals}<textarea value={goals} onChange={(e) => setGoals(e.target.value)} /></label>
       <div className="grid two"><section><h3>{t.forgeMeta}</h3><textarea value={forgeToml} onChange={(e) => setForgeToml(e.target.value)} /></section><section><h3>{t.fabricMeta}</h3><textarea value={fabricJson} onChange={(e) => setFabricJson(e.target.value)} /></section></div>
       <label>{t.codeInput}<textarea value={codeInput} onChange={(e) => setCodeInput(e.target.value)} /></label>
       <div className="actions"><button className="primary" disabled={runningOneClick} onClick={() => void runOneClick()}>{runningOneClick ? t.running : t.runOneClick}</button></div>
@@ -319,6 +319,7 @@ export function App() {
         <button onClick={() => wrap(t.completeAuth, onCompleteAuth)}>{t.completeAuth}</button>
       </div>
       <pre>{oauthLog || (settings.language === 'ko' ? '여기에 OAuth 진행 상태가 표시됩니다.' : 'OAuth status will appear here.')}</pre>
+      {oauthEndpoint && <p className="subtle"><strong>{t.oauthEndpoint}:</strong> {oauthEndpoint}</p>}
     </section>
 
     <section className="panel">
