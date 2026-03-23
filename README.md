@@ -32,7 +32,11 @@ Cross-loader conversion is intentionally blocked in analyzer/rules/UI/prompts.
 
 4) **AI planning**
 - OpenAI / Anthropic / Gemini clients remain available
-- Prompt now enforces same-loader upgrade scope
+- **OpenClaw Gateway provider mode** added: `OpenClaw (reuse this server auth)`
+  - Reuses local OpenClaw gateway config (`~/.openclaw/openclaw.json`) and auth token when available
+  - No OpenAI OAuth client ID required in this mode
+  - If gateway HTTP endpoints are unavailable/disabled, app shows Korean troubleshooting + fallback instructions
+- Prompt enforces same-loader upgrade scope
 
 5) **Deterministic + AST-aware transform pipeline**
 - Deterministic rule ordering
@@ -65,8 +69,15 @@ npm run dev
 1. **Open app and set basics**: choose source loader (Forge/Fabric), set target Minecraft version (same loader only).
 2. **Paste inputs**: mods metadata (`mods.toml` / `fabric.mod.json`) and a Java code snippet.
 3. **Click one button**: run **One-Click Mode** to auto execute parse -> analyze -> optimized built-in prompt -> rules preview.
-   - Optional: paste OpenAI API key/access token first to also get AI plan text.
-   - If OAuth link fails, use manual token input and continue (flow is not blocked).
+   - Default simple path: select **OpenClaw (reuse this server auth)** and run (no OpenAI OAuth client ID needed).
+   - Optional direct-provider path: select OpenAI/Anthropic/Gemini and paste provider token.
+   - If OpenClaw gateway is unreachable/disabled, follow in-app Korean fallback steps.
+
+## Billing/auth note (important)
+
+- **ChatGPT Plus is not the same as OpenAI API credits.**
+- This app's classic OpenAI provider still uses direct API billing when you call OpenAI endpoints.
+- If your OpenClaw server already has auth/model configured (for example, openai-codex OAuth route), use **OpenClaw Gateway provider mode** to reuse that route through local gateway HTTP endpoints instead of wiring separate API billing in this app.
 
 ## Typecheck + build + tests
 
@@ -98,10 +109,12 @@ npm run test:regression
 
 ## Project structure
 
-- `src/App.tsx` – one-click-first UI + collapsible advanced mode + i18n + OAuth/manual token flow
+- `src/App.tsx` – one-click-first UI + collapsible advanced mode + i18n + provider selector (OpenClaw/OpenAI/Anthropic/Gemini)
 - `src/lib/analysis/compatibility.ts` – compatibility scoring and same-loader enforcement
 - `src/lib/prompts/conversionPrompt.ts` – AI planning prompt contract
+- `src/lib/ai/providers.ts` – provider clients (including OpenClaw gateway HTTP endpoints)
 - `src/lib/transform/rulesEngine.ts` – deterministic rules (same-loader enforced)
 - `electron/openaiOAuth.ts` – OpenAI link-based OAuth + PKCE exchange helpers
+- `electron/openclawGatewayConfig.ts` – reuse OpenClaw gateway URL/token from env or `~/.openclaw/openclaw.json`
 - `electron/main.ts` / `electron/preload.ts` – IPC bridge
 - `tests/*.test.js` – regression tests

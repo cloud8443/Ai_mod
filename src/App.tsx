@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CompatibilityReport, ParsedModMetadata, RuleTransformPlan } from './lib/types/contracts';
+import type { AIProvider, CompatibilityReport, ParsedModMetadata, RuleTransformPlan } from './lib/types/contracts';
 
 type Loader = 'forge' | 'fabric';
 type Lang = 'en' | 'ko';
@@ -36,8 +36,13 @@ const TEXT = {
     analysis: 'Compatibility analysis',
     prompt: 'Generated prompt',
     rulesPreview: 'Rules preview result',
-    authTitle: 'OpenAI login (optional)',
-    authDesc: 'If OAuth link login fails, paste an OpenAI API key/access token below and continue one-click.',
+    authTitle: 'AI provider auth (optional)',
+    authDesc: 'Choose provider. OpenClaw mode reuses this server\'s gateway auth/model with no OpenAI OAuth setup.',
+    provider: 'AI provider',
+    providerOpenClaw: 'OpenClaw (reuse this server auth)',
+    providerOpenAI: 'OpenAI',
+    providerAnthropic: 'Anthropic',
+    providerGemini: 'Gemini',
     oauthClientId: 'OpenAI OAuth Client ID',
     redirectUri: 'Redirect URI',
     oauthEndpoint: 'OAuth endpoint',
@@ -71,8 +76,13 @@ const TEXT = {
     analysis: '호환성 분석 결과',
     prompt: '생성된 프롬프트',
     rulesPreview: '규칙 미리보기 결과',
-    authTitle: 'OpenAI 로그인 (선택)',
-    authDesc: 'OAuth 링크 로그인이 실패해도 아래 수동 토큰 입력으로 바로 원클릭을 계속할 수 있습니다.',
+    authTitle: 'AI 제공자 인증 (선택)',
+    authDesc: '제공자를 선택하세요. OpenClaw 모드는 OpenAI OAuth 설정 없이 이 서버의 Gateway 인증/모델을 재사용합니다.',
+    provider: 'AI 제공자',
+    providerOpenClaw: 'OpenClaw (이 서버 인증 재사용)',
+    providerOpenAI: 'OpenAI',
+    providerAnthropic: 'Anthropic',
+    providerGemini: 'Gemini',
     oauthClientId: 'OpenAI OAuth 클라이언트 ID',
     redirectUri: '리다이렉트 URI',
     oauthEndpoint: 'OAuth 엔드포인트',
@@ -99,6 +109,9 @@ const fmt = (t: number) => new Date(t).toLocaleTimeString();
 function friendlyError(error: unknown, language: Lang): string {
   const raw = error instanceof Error ? error.message : String(error);
   if (language === 'ko') {
+    if (/OPENCLAW_GATEWAY_UNAVAILABLE/i.test(raw)) {
+      return 'OpenClaw Gateway 연결에 실패했습니다.\n확인 순서:\n1) `openclaw gateway status` 로 게이트웨이가 실행 중인지 확인\n2) openclaw.json에서 gateway.http.endpoints.responses 또는 chatCompletions 활성화\n3) 인증 토큰이 다르면 앱 재시작 후 다시 시도\n대안: OpenAI/Anthropic/Gemini 제공자로 전환하고 API 키를 입력해 진행하세요.';
+    }
     if (/client_id|client id|clientId/i.test(raw)) {
       return 'client_id가 비어 있습니다. OpenAI 플랫폼에서 발급한 OAuth Client ID를 입력하거나, 아래 수동 토큰 칸에 API 키/액세스 토큰을 붙여넣어 바로 진행해 주세요.';
     }
@@ -115,6 +128,7 @@ export function App() {
   const [metadata, setMetadata] = useState<ParsedModMetadata[]>([]);
   const [targetVersion, setTargetVersion] = useState('1.20.4');
   const [sourceLoader, setSourceLoader] = useState<Loader>('forge');
+  const [provider, setProvider] = useState<AIProvider>('openclaw-gateway');
   const [token, setToken] = useState('');
   const [clientId, setClientId] = useState('');
   const [redirectUri, setRedirectUri] = useState('https://localhost/callback');
@@ -196,7 +210,11 @@ export function App() {
   }
 
   async function onGeneratePlan(prompt: string) {
-    const plan = await window.mcModConverter.generatePlan({ provider: 'openai', credentials: { oauthAccessToken: token, apiKey: token }, prompt });
+    const plan = await window.mcModConverter.generatePlan({
+      provider,
+      credentials: { oauthAccessToken: token, apiKey: token },
+      prompt
+    });
     setPlanText(plan);
     return plan;
   }
@@ -241,7 +259,7 @@ export function App() {
       const prompt = await window.mcModConverter.buildPrompt(nextRequest);
       setPromptText(prompt);
 
-      if (token.trim()) {
+      if (provider === 'openclaw-gateway' || token.trim()) {
         pushLog('info', settings.language === 'ko' ? '원클릭: AI 계획 생성 시작' : 'One-click: generating AI plan');
         await onGeneratePlan(prompt);
       } else {
@@ -302,24 +320,48 @@ export function App() {
     <section className="panel">
       <h2>{t.authTitle}</h2>
       <p className="subtle">{t.authDesc}</p>
-      <label>{t.manualToken}<input value={token} onChange={(e) => setToken(e.target.value)} placeholder="sk-... or oauth access token" /></label>
-      <div className="actions compact">
-        <button onClick={() => wrap(t.saveCred, async () => { if (token.trim()) await window.mcModConverter.setSecret('openai', token.trim()); })}>{t.saveCred}</button>
-        <button onClick={() => wrap(t.loadCred, async () => { const s = await window.mcModConverter.getSecret('openai'); setToken(s?.value ?? ''); })}>{t.loadCred}</button>
-        <button onClick={() => wrap(t.clearCred, async () => { await window.mcModConverter.clearSecret('openai'); setToken(''); })}>{t.clearCred}</button>
-      </div>
-      <div className="grid two">
-        <label>{t.oauthClientId}<input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="oa-client-..." /></label>
-        <label>{t.redirectUri}<input value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} /></label>
-      </div>
-      <label>{t.callbackInput}<input value={codeOrUrl} onChange={(e) => setCodeOrUrl(e.target.value)} /></label>
-      <div className="actions">
-        <button onClick={() => wrap(t.startAuth, onStartAuth)}>{t.startAuth}</button>
-        <button disabled={!authUrl} onClick={() => window.open(authUrl, '_blank')}>{t.openLink}</button>
-        <button onClick={() => wrap(t.completeAuth, onCompleteAuth)}>{t.completeAuth}</button>
-      </div>
-      <pre>{oauthLog || (settings.language === 'ko' ? '여기에 OAuth 진행 상태가 표시됩니다.' : 'OAuth status will appear here.')}</pre>
-      {oauthEndpoint && <p className="subtle"><strong>{t.oauthEndpoint}:</strong> {oauthEndpoint}</p>}
+      <label>{t.provider}
+        <select
+          value={provider}
+          onChange={(e) => {
+            const next = e.target.value as AIProvider;
+            setProvider(next);
+            void wrap(t.loadCred, async () => {
+              const s = await window.mcModConverter.getSecret(next);
+              setToken(s?.value ?? '');
+            });
+          }}
+        >
+          <option value="openclaw-gateway">{t.providerOpenClaw}</option>
+          <option value="openai">{t.providerOpenAI}</option>
+          <option value="anthropic">{t.providerAnthropic}</option>
+          <option value="gemini">{t.providerGemini}</option>
+        </select>
+      </label>
+      {provider !== 'openclaw-gateway' && <>
+        <label>{t.manualToken}<input value={token} onChange={(e) => setToken(e.target.value)} placeholder="sk-... or oauth access token" /></label>
+        <div className="actions compact">
+          <button onClick={() => wrap(t.saveCred, async () => { if (token.trim()) await window.mcModConverter.setSecret(provider, token.trim()); })}>{t.saveCred}</button>
+          <button onClick={() => wrap(t.loadCred, async () => { const s = await window.mcModConverter.getSecret(provider); setToken(s?.value ?? ''); })}>{t.loadCred}</button>
+          <button onClick={() => wrap(t.clearCred, async () => { await window.mcModConverter.clearSecret(provider); setToken(''); })}>{t.clearCred}</button>
+        </div>
+      </>}
+      {provider === 'openai' && <>
+        <div className="grid two">
+          <label>{t.oauthClientId}<input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="oa-client-..." /></label>
+          <label>{t.redirectUri}<input value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} /></label>
+        </div>
+        <label>{t.callbackInput}<input value={codeOrUrl} onChange={(e) => setCodeOrUrl(e.target.value)} /></label>
+        <div className="actions">
+          <button onClick={() => wrap(t.startAuth, onStartAuth)}>{t.startAuth}</button>
+          <button disabled={!authUrl} onClick={() => window.open(authUrl, '_blank')}>{t.openLink}</button>
+          <button onClick={() => wrap(t.completeAuth, onCompleteAuth)}>{t.completeAuth}</button>
+        </div>
+      </>}
+      <pre>{oauthLog || (provider === 'openai'
+        ? (settings.language === 'ko' ? '여기에 OAuth 진행 상태가 표시됩니다.' : 'OAuth status will appear here.')
+        : (settings.language === 'ko' ? 'OpenClaw 모드는 로컬 Gateway 인증을 자동 재사용합니다.' : 'OpenClaw mode automatically reuses local Gateway auth.'))}</pre>
+      {provider === 'openai' && oauthEndpoint && <p className="subtle"><strong>{t.oauthEndpoint}:</strong> {oauthEndpoint}</p>}
     </section>
 
     <section className="panel">
@@ -329,7 +371,7 @@ export function App() {
       <h3>{t.prompt}</h3>
       <pre>{promptText || (settings.language === 'ko' ? '원클릭 실행 후 프롬프트가 표시됩니다.' : 'Run one-click to view prompt.')}</pre>
       <h3>AI Plan</h3>
-      <pre>{planText || (settings.language === 'ko' ? '토큰 입력 시 AI 계획이 생성됩니다.' : 'AI plan appears when token is provided.')}</pre>
+      <pre>{planText || (settings.language === 'ko' ? '선택한 제공자 설정이 준비되면 AI 계획이 생성됩니다.' : 'AI plan appears when selected provider settings are ready.')}</pre>
       <h3>{t.rulesPreview}</h3>
       <pre>{transformPlan ? JSON.stringify(transformPlan, null, 2) : (settings.language === 'ko' ? '원클릭 실행 후 규칙 미리보기가 표시됩니다.' : 'Run one-click to view rule preview.')}</pre>
       {compatibilityReport && <p><strong>Score:</strong> {compatibilityReport.score} / 100</p>}
@@ -341,7 +383,7 @@ export function App() {
         <button onClick={() => wrap(t.parse, async () => { await onParse(); })}>{t.parse}</button>
         <button onClick={() => wrap(t.analyze, async () => { const parsed = metadata.length > 0 ? metadata : await onParse(); await onAnalyze(parsed); })}>{t.analyze}</button>
         <button onClick={() => wrap(t.buildPrompt, async () => { const nextRequest = { ...request, source: metadata.length > 0 ? metadata : await onParse() }; const p = await window.mcModConverter.buildPrompt(nextRequest); setPromptText(p); })}>{t.buildPrompt}</button>
-        <button disabled={!token.trim()} onClick={() => wrap(t.plan, async () => { const base = promptText || await window.mcModConverter.buildPrompt({ ...request, source: metadata.length > 0 ? metadata : await onParse() }); await onGeneratePlan(base); })}>{t.plan}</button>
+        <button disabled={provider !== 'openclaw-gateway' && !token.trim()} onClick={() => wrap(t.plan, async () => { const base = promptText || await window.mcModConverter.buildPrompt({ ...request, source: metadata.length > 0 ? metadata : await onParse() }); await onGeneratePlan(base); })}>{t.plan}</button>
         <button onClick={() => wrap(t.previewRules, async () => { await onPreviewRules(); })}>{t.previewRules}</button>
         <button onClick={() => wrap(t.applyRules, onApplyRules)}>{t.applyRules}</button>
       </div>

@@ -12,6 +12,8 @@ export function createProviderClient(provider: AIProvider, credentials: AICreden
       return anthropicClient(credentials);
     case 'gemini':
       return geminiClient(credentials);
+    case 'openclaw-gateway':
+      return openclawGatewayClient(credentials);
     default:
       throw new Error(`Unsupported provider: ${String(provider)}`);
   }
@@ -97,4 +99,110 @@ function geminiClient(credentials: AICredentials): ProviderClient {
       return json.candidates?.[0]?.content?.parts?.[0]?.text ?? '[Gemini] No text output.';
     }
   };
+}
+
+function openclawGatewayClient(credentials: AICredentials): ProviderClient {
+  return {
+    async generatePlan(prompt: string) {
+      const baseUrl = normalizeBaseUrl(credentials.gatewayBaseUrl);
+      const token = credentials.gatewayToken ?? credentials.apiKey ?? credentials.oauthAccessToken;
+      if (!baseUrl || !token) {
+        throw new Error('OPENCLAW_GATEWAY_UNAVAILABLE:missing-config');
+      }
+
+      const agentId = credentials.gatewayAgentId || 'main';
+      const model = credentials.gatewayModel || 'openclaw';
+
+      const responseResult = await tryResponsesEndpoint({ baseUrl, token, prompt, agentId, model });
+      if (responseResult) return responseResult;
+
+      const chatResult = await tryChatCompletionsEndpoint({ baseUrl, token, prompt, agentId, model });
+      if (chatResult) return chatResult;
+
+      throw new Error('OPENCLAW_GATEWAY_UNAVAILABLE:endpoint-disabled');
+    }
+  };
+}
+
+function normalizeBaseUrl(base?: string): string {
+  if (!base) return '';
+  return base.replace(/\/+$/, '');
+}
+
+async function tryResponsesEndpoint(params: {
+  baseUrl: string;
+  token: string;
+  prompt: string;
+  agentId: string;
+  model: string;
+}): Promise<string | null> {
+  try {
+    const res = await fetch(`${params.baseUrl}/v1/responses`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${params.token}`,
+        'x-openclaw-agent-id': params.agentId
+      },
+      body: JSON.stringify({ model: params.model, input: params.prompt })
+    });
+
+    if (!res.ok) {
+      if (res.status === 404 || res.status === 405) return null;
+      if (res.status === 401 || res.status === 403) throw new Error('OPENCLAW_GATEWAY_UNAVAILABLE:unauthorized');
+      if (res.status >= 500) throw new Error('OPENCLAW_GATEWAY_UNAVAILABLE:server-error');
+      return null;
+    }
+
+    const json = (await res.json()) as {
+      output_text?: string;
+      output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>;
+    };
+
+    if (json.output_text?.trim()) return json.output_text;
+    const textPart = json.output?.flatMap((item) => item.content ?? []).find((part) => part.type === 'output_text' && part.text)?.text;
+    return textPart?.trim() ? textPart : '[OpenClaw Gateway] No text output.';
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('OPENCLAW_GATEWAY_UNAVAILABLE:')) throw error;
+    return null;
+  }
+}
+
+async function tryChatCompletionsEndpoint(params: {
+  baseUrl: string;
+  token: string;
+  prompt: string;
+  agentId: string;
+  model: string;
+}): Promise<string | null> {
+  try {
+    const res = await fetch(`${params.baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${params.token}`,
+        'x-openclaw-agent-id': params.agentId
+      },
+      body: JSON.stringify({
+        model: params.model,
+        messages: [{ role: 'user', content: params.prompt }]
+      })
+    });
+
+    if (!res.ok) {
+      if (res.status === 404 || res.status === 405) return null;
+      if (res.status === 401 || res.status === 403) throw new Error('OPENCLAW_GATEWAY_UNAVAILABLE:unauthorized');
+      if (res.status >= 500) throw new Error('OPENCLAW_GATEWAY_UNAVAILABLE:server-error');
+      return null;
+    }
+
+    const json = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const text = json.choices?.[0]?.message?.content;
+    return text?.trim() ? text : '[OpenClaw Gateway] No text output.';
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('OPENCLAW_GATEWAY_UNAVAILABLE:')) throw error;
+    return null;
+  }
 }

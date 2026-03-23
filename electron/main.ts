@@ -8,6 +8,7 @@ import { safeTransformStub } from '../src/lib/transform/safeTransform.js';
 import { runDeterministicRuleTransform } from '../src/lib/transform/rulesEngine.js';
 import { LocalTokenStore } from './tokenStore.js';
 import { completeOpenAILinkFlow, startOpenAILinkFlow } from './openaiOAuth.js';
+import { resolveOpenClawGatewayCredentials } from './openclawGatewayConfig.js';
 import type { AIProvider, AIRequest, ConversionRequest, RuleTransformRequest } from '../src/lib/types/contracts.js';
 
 const tokenStore = new LocalTokenStore();
@@ -47,11 +48,18 @@ ipcMain.handle('ai:buildPrompt', async (_event, req: ConversionRequest) => {
 
 ipcMain.handle('ai:generatePlan', async (_event, req: AIRequest) => {
   const stored = await tokenStore.get(req.provider);
-  const provider = createProviderClient(req.provider, {
+
+  const baseCredentials = {
     ...req.credentials,
     apiKey: req.credentials.apiKey || (req.provider !== 'openai' ? stored?.value : undefined),
     oauthAccessToken: req.credentials.oauthAccessToken || (req.provider === 'openai' ? stored?.value : undefined)
-  });
+  };
+
+  const credentials = req.provider === 'openclaw-gateway'
+    ? await resolveOpenClawGatewayCredentials(baseCredentials)
+    : baseCredentials;
+
+  const provider = createProviderClient(req.provider, credentials);
   return provider.generatePlan(req.prompt);
 });
 

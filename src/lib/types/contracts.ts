@@ -19,11 +19,15 @@ export interface ConversionRequest {
   userGoals?: string;
 }
 
-export type AIProvider = 'openai' | 'anthropic' | 'gemini';
+export type AIProvider = 'openai' | 'anthropic' | 'gemini' | 'openclaw-gateway';
 
 export interface AICredentials {
   apiKey?: string;
   oauthAccessToken?: string;
+  gatewayBaseUrl?: string;
+  gatewayToken?: string;
+  gatewayAgentId?: string;
+  gatewayModel?: string;
 }
 
 export interface AIRequest {
